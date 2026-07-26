@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "luau-vmp-deobf"
+version = "0.1.0"
+description = "Static deobfuscator for Luau scripts protected by a custom bytecode VM"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["luau", "lua", "deobfuscation", "reverse-engineering", "bytecode", "devirtualization"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "Programming Language :: Python :: 3",
+  "Topic :: Security",
+]
+
+[project.scripts]
+luauvmp = "luauvmp.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["luauvmp*"]

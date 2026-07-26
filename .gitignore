@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+*.deobf.lua
+*.disasm.txt
+*.strings.txt
+*.bytecode.bin
+*.normalised.lua
+*.handlers.txt
+*.spec.json

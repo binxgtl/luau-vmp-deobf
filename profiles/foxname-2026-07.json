@@ -1,0 +1,548 @@
+{
+ "byte_key": 236,
+ "word_key": 1721848255,
+ "varint_key": 1316112189,
+ "type_abc": 1,
+ "type_ad": 7,
+ "type_ae": 2,
+ "kmode_D": 0,
+ "kmode_E": 1,
+ "kmode_auxbool": 2,
+ "kmode_aux16": 3,
+ "kmode_import": 4,
+ "kmode_aux24": 5,
+ "kmode_B": 6,
+ "kmode_aux": 7,
+ "kmode_none": 8,
+ "kmode_A": 9,
+ "kmode_C": 10,
+ "const_types": {
+  "0": "string",
+  "2": "int",
+  "6": "double",
+  "1": "nil"
+ },
+ "opinfo": [],
+ "ops": {
+  "149": "ADD",
+  "150": "ADD",
+  "151": "ADD",
+  "152": "ADD",
+  "153": "ADD",
+  "154": "ADD",
+  "155": "ADD",
+  "156": "ADD",
+  "157": "ADD",
+  "158": "ADD",
+  "159": "ADD",
+  "160": "ADD",
+  "161": "ADD",
+  "162": "ADD",
+  "163": "ADD",
+  "164": "ADD",
+  "165": "ADD",
+  "166": "ADD",
+  "172": "JUMPIFNOTEQ",
+  "173": "JUMPIFNOTEQ",
+  "174": "JUMPIFNOTEQ",
+  "175": "JUMPIFNOTEQ",
+  "176": "JUMPIFNOTEQ",
+  "177": "JUMPIFNOTEQ",
+  "178": "JUMPIFNOTEQ",
+  "179": "JUMPIFNOTEQ",
+  "180": "JUMPIFNOTEQ",
+  "181": "JUMPIFNOTEQ",
+  "182": "JUMPIFNOTEQ",
+  "183": "JUMPIFNOTEQ",
+  "184": "JUMPIFNOTEQ",
+  "185": "JUMPIFNOTEQ",
+  "186": "JUMPIFNOTEQ",
+  "187": "JUMPIFNOTEQ",
+  "29": "FORGLOOP",
+  "30": "FORGLOOP",
+  "31": "FORGLOOP",
+  "32": "FORGLOOP",
+  "33": "FORGLOOP",
+  "34": "FORGLOOP",
+  "35": "FORGLOOP",
+  "36": "FORGLOOP",
+  "37": "FORGLOOP",
+  "38": "FORGLOOP",
+  "39": "FORGLOOP",
+  "40": "FORGLOOP",
+  "63": "SETUPVAL",
+  "64": "SETUPVAL",
+  "65": "SETUPVAL",
+  "66": "SETUPVAL",
+  "67": "SETUPVAL",
+  "68": "SETUPVAL",
+  "69": "SETUPVAL",
+  "70": "SETUPVAL",
+  "71": "SETUPVAL",
+  "72": "SETUPVAL",
+  "73": "GETTABLE",
+  "74": "GETTABLE",
+  "75": "GETTABLE",
+  "76": "GETTABLE",
+  "77": "GETTABLE",
+  "78": "GETTABLE",
+  "79": "GETTABLE",
+  "80": "GETTABLE",
+  "81": "GETTABLE",
+  "82": "GETTABLE",
+  "121": "SUB",
+  "122": "SUB",
+  "123": "SUB",
+  "124": "SUB",
+  "125": "SUB",
+  "126": "SUB",
+  "127": "SUB",
+  "128": "SUB",
+  "129": "SUB",
+  "130": "SUB",
+  "199": "ADDK",
+  "200": "ADDK",
+  "201": "ADDK",
+  "202": "ADDK",
+  "203": "ADDK",
+  "204": "ADDK",
+  "205": "ADDK",
+  "206": "ADDK",
+  "207": "ADDK",
+  "208": "ADDK",
+  "96": "NAMECALL",
+  "97": "NAMECALL",
+  "98": "NAMECALL",
+  "99": "NAMECALL",
+  "100": "NAMECALL",
+  "101": "NAMECALL",
+  "102": "NAMECALL",
+  "103": "NAMECALL",
+  "104": "NAMECALL",
+  "237": "GETIMPORT",
+  "238": "GETIMPORT",
+  "239": "GETIMPORT",
+  "240": "GETIMPORT",
+  "241": "GETIMPORT",
+  "242": "GETIMPORT",
+  "243": "GETIMPORT",
+  "244": "GETIMPORT",
+  "245": "GETIMPORT",
+  "20": "LOADB",
+  "21": "LOADB",
+  "22": "LOADB",
+  "23": "LOADB",
+  "24": "LOADB",
+  "25": "LOADB",
+  "26": "LOADB",
+  "27": "LOADB",
+  "4": "ORK",
+  "5": "ORK",
+  "6": "ORK",
+  "7": "ORK",
+  "8": "ORK",
+  "9": "ORK",
+  "10": "ORK",
+  "212": "NOP",
+  "213": "NOP",
+  "214": "NOP",
+  "215": "NOP",
+  "216": "NOP",
+  "217": "NOP",
+  "218": "NOP",
+  "115": "RETURN",
+  "116": "RETURN",
+  "117": "RETURN",
+  "118": "RETURN",
+  "119": "RETURN",
+  "120": "RETURN",
+  "143": "NEWCLOSURE2",
+  "144": "NEWCLOSURE2",
+  "145": "NEWCLOSURE2",
+  "146": "NEWCLOSURE2",
+  "147": "NEWCLOSURE2",
+  "148": "NEWCLOSURE2",
+  "188": "NOP",
+  "189": "NOP",
+  "190": "NOP",
+  "191": "NOP",
+  "192": "NOP",
+  "193": "NOP",
+  "227": "FORGPREP_F",
+  "228": "FORGPREP_F",
+  "229": "FORGPREP_F",
+  "230": "FORGPREP_F",
+  "231": "FORGPREP_F",
+  "232": "FORGPREP_F",
+  "41": "JUMPXEQKB",
+  "42": "JUMPXEQKB",
+  "43": "JUMPXEQKB",
+  "44": "JUMPXEQKB",
+  "45": "JUMPXEQKB",
+  "83": "GETTABLEKS",
+  "84": "GETTABLEKS",
+  "85": "GETTABLEKS",
+  "86": "GETTABLEKS",
+  "87": "GETTABLEKS",
+  "91": "MODK",
+  "92": "MODK",
+  "93": "MODK",
+  "94": "MODK",
+  "95": "MODK",
+  "108": "JUMPXEQKS",
+  "109": "JUMPXEQKS",
+  "110": "JUMPXEQKS",
+  "111": "JUMPXEQKS",
+  "112": "JUMPXEQKS",
+  "138": "LOADNIL",
+  "139": "LOADNIL",
+  "140": "LOADNIL",
+  "141": "LOADNIL",
+  "142": "LOADNIL",
+  "167": "MOVE",
+  "168": "MOVE",
+  "169": "MOVE",
+  "170": "MOVE",
+  "171": "MOVE",
+  "251": "DECSTR",
+  "252": "DECSTR",
+  "253": "DECSTR",
+  "254": "DECSTR",
+  "255": "DECSTR",
+  "0": "JUMPIFNOTLE",
+  "1": "JUMPIFNOTLE",
+  "2": "JUMPIFNOTLE",
+  "3": "JUMPIFNOTLE",
+  "12": "FORNPREP",
+  "13": "FORNPREP",
+  "14": "FORNPREP",
+  "15": "FORNPREP",
+  "16": "CLOSEUPVALS",
+  "17": "CLOSEUPVALS",
+  "18": "CLOSEUPVALS",
+  "19": "CLOSEUPVALS",
+  "47": "JUMPIFNOT",
+  "48": "JUMPIFNOT",
+  "49": "JUMPIFNOT",
+  "50": "JUMPIFNOT",
+  "56": "JUMP",
+  "57": "JUMP",
+  "58": "JUMP",
+  "59": "JUMP",
+  "131": "SETTABLE",
+  "132": "SETTABLE",
+  "133": "SETTABLE",
+  "134": "SETTABLE",
+  "233": "LEN",
+  "234": "LEN",
+  "235": "LEN",
+  "236": "LEN",
+  "52": "JUMPXEQKS",
+  "53": "JUMPXEQKS",
+  "54": "JUMPXEQKS",
+  "88": "JUMPIF",
+  "89": "JUMPIF",
+  "90": "JUMPIF",
+  "105": "JUMPIFLE",
+  "106": "JUMPIFLE",
+  "107": "JUMPIFLE",
+  "194": "JUMPXEQKNIL",
+  "195": "JUMPXEQKNIL",
+  "196": "JUMPXEQKNIL",
+  "209": "SETTABLEKS",
+  "210": "SETTABLEKS",
+  "211": "SETTABLEKS",
+  "219": "CALL",
+  "220": "CALL",
+  "221": "CALL",
+  "246": "SETTABLEN",
+  "247": "SETTABLEN",
+  "248": "SETTABLEN",
+  "60": "GETTABLEN",
+  "61": "GETTABLEN",
+  "136": "LOADK",
+  "137": "LOADK",
+  "225": "LOADN",
+  "226": "LOADN",
+  "249": "NOP",
+  "250": "NOP",
+  "11": "MULK",
+  "28": "FORNLOOP",
+  "46": "NEWCLOSURE",
+  "51": "JUMPIFEQ",
+  "55": "CONCAT",
+  "62": "DIVK",
+  "113": "GETVARARGS",
+  "114": "GETUPVAL",
+  "135": "NEWTABLE",
+  "197": "DECIMPORT",
+  "198": "JUMPIFNOTLT",
+  "222": "JUMP",
+  "223": "SETLIST",
+  "224": "FORGPREP"
+ },
+ "masks": {
+  "RETURN": {
+   "xor": {
+    "A": 227,
+    "B": 11
+   }
+  },
+  "NEWCLOSURE2": {
+   "xor": {
+    "Du": 25107,
+    "A": 95
+   }
+  },
+  "LOADNIL": {
+   "xor": {
+    "A": 107,
+    "B": 245
+   }
+  },
+  "MOVE": {
+   "xor": {
+    "A": 182,
+    "B": 85
+   }
+  },
+  "CALL": {
+   "xor": {
+    "C": 124,
+    "B": 192,
+    "A": 62
+   }
+  },
+  "LOADN": {
+   "xor": {
+    "Du": 34144,
+    "A": 200
+   }
+  },
+  "GETVARARGS": {
+   "xor": {
+    "A": 107,
+    "B": 64
+   }
+  },
+  "GETUPVAL": {
+   "xor": {
+    "A": 234,
+    "B": 35
+   }
+  }
+ },
+ "mutations": {
+  "115,70": [
+   113,
+   52,
+   148
+  ],
+  "116,70": [
+   113,
+   52,
+   148
+  ],
+  "117,70": [
+   113,
+   52,
+   148
+  ],
+  "118,70": [
+   113,
+   52,
+   148
+  ],
+  "119,70": [
+   113,
+   52,
+   148
+  ],
+  "120,70": [
+   113,
+   52,
+   148
+  ],
+  "115,129": [
+   142,
+   121,
+   229
+  ],
+  "116,129": [
+   142,
+   121,
+   229
+  ],
+  "117,129": [
+   142,
+   121,
+   229
+  ],
+  "118,129": [
+   142,
+   121,
+   229
+  ],
+  "119,129": [
+   142,
+   121,
+   229
+  ],
+  "120,129": [
+   142,
+   121,
+   229
+  ],
+  "115,252": [
+   171,
+   227,
+   11
+  ],
+  "116,252": [
+   171,
+   227,
+   11
+  ],
+  "117,252": [
+   171,
+   227,
+   11
+  ],
+  "118,252": [
+   171,
+   227,
+   11
+  ],
+  "119,252": [
+   171,
+   227,
+   11
+  ],
+  "120,252": [
+   171,
+   227,
+   11
+  ],
+  "138,107": [
+   19,
+   190,
+   93
+  ],
+  "139,107": [
+   19,
+   190,
+   93
+  ],
+  "140,107": [
+   19,
+   190,
+   93
+  ],
+  "141,107": [
+   19,
+   190,
+   93
+  ],
+  "142,107": [
+   19,
+   190,
+   93
+  ],
+  "138,134": [
+   114,
+   189,
+   207
+  ],
+  "139,134": [
+   114,
+   189,
+   207
+  ],
+  "140,134": [
+   114,
+   189,
+   207
+  ],
+  "141,134": [
+   114,
+   189,
+   207
+  ],
+  "142,134": [
+   114,
+   189,
+   207
+  ],
+  "138,180": [
+   72,
+   107,
+   245
+  ],
+  "139,180": [
+   72,
+   107,
+   245
+  ],
+  "140,180": [
+   72,
+   107,
+   245
+  ],
+  "141,180": [
+   72,
+   107,
+   245
+  ],
+  "142,180": [
+   72,
+   107,
+   245
+  ],
+  "167,78": [
+   140,
+   182,
+   85
+  ],
+  "168,78": [
+   140,
+   182,
+   85
+  ],
+  "169,78": [
+   140,
+   182,
+   85
+  ],
+  "170,78": [
+   140,
+   182,
+   85
+  ],
+  "171,78": [
+   140,
+   182,
+   85
+  ],
+  "113,225": [
+   120,
+   107,
+   64
+  ],
+  "114,97": [
+   253,
+   61,
+   154
+  ],
+  "114,146": [
+   236,
+   234,
+   35
+  ]
+ },
+ "str_prefix": [
+  20,
+  125,
+  21,
+  43
+ ]
+}
