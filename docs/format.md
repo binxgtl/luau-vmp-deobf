@@ -182,5 +182,29 @@ return box(stage2, {})(...)
 
 The constants are still encrypted after the usual lazy-decrypt pass, because the
 decryption key is produced by *running* the first stage.  Everything up to and
-including that stub is recovered statically; going further needs the stub
-executed (or its logic reimplemented), which this tool deliberately does not do.
+including that stub is recovered statically.
+
+To get the second image you have to let the stub run, but you do not have to let
+the *script* run.  Hook the loader function - the local the tail call passes the
+payload to - count its invocations, and on the one that receives the second image
+record the string and hand back an empty function:
+
+```lua
+y = gc
+do local real = y
+   local n = 0
+   y = function(bc, env)
+       n = n + 1
+       if n >= 3 then                       -- 1: outer payload, 2: key proto
+           writefile("stage2.b64", base64_encode(bc))
+           return function() end            -- captured, never executed
+       end
+       return real(bc, env)
+   end
+end
+```
+
+The captured image is an ordinary container in the same format, so feeding it
+back through `container.parse` with the spec recovered from the loader decodes it
+completely.  On the sample this yielded 128 231 bytes, 287 protos and 3 900 lines
+of Lua with no unknown opcodes.

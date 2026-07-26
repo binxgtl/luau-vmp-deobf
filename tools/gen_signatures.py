@@ -45,7 +45,10 @@ LABELS = {
     },
     # third build - MoonVeil v1.4.5, staged payload
     'script': {
-        10: 'DECSTR', 92: 'CALL', 106: 'GETVARARGS', 178: 'MOVE', 192: 'RETURN',
+        3: 'CLOSEUPVALS', 10: 'DECSTR', 27: 'MINUS', 52: 'CONCAT', 58: 'DECIMPORT',
+        71: 'NEWCLOSURE', 91: 'GETIMPORT', 92: 'CALL', 96: 'NEWCLOSURE2',
+        106: 'GETVARARGS', 115: 'LOADNIL', 147: 'MUL', 152: 'FORNPREP',
+        171: 'POW', 178: 'MOVE', 192: 'RETURN', 228: 'JUMP',
     },
 }
 

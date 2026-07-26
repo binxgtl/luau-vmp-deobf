@@ -18,7 +18,7 @@ INLINE_CLOSURE_LINES = 8
 PURE = {'MOVE', 'LOADNIL', 'LOADN', 'LOADK', 'GETIMPORT', 'GETTABLE', 'GETTABLEKS',
         'GETTABLEN', 'NAMECALL', 'GETUPVAL', 'ADD', 'SUB', 'MULK', 'DIVK', 'MODK',
         'ADDK', 'SUBK', 'ORK', 'ANDK', 'MUL', 'DIV', 'MOD', 'AND', 'OR', 'NOT',
-        'MINUS', 'CONCAT', 'LEN', 'NOP', 'DECSTR', 'DECIMPORT',
+        'MINUS', 'POW', 'CONCAT', 'LEN', 'NOP', 'DECSTR', 'DECIMPORT',
         'NEWCLOSURE', 'NEWCLOSURE2'}
 
 
@@ -552,6 +552,8 @@ class Dec:
             self.setr(A, 'not %s' % self.r(B))
         elif name == 'MINUS':
             self.setr(A, '-%s' % self.r(B))
+        elif name == 'POW':
+            self.setr(A, '(%s ^ %s)' % (self.r(C), self.r(B)))
         elif name == 'CONCAT':
             self.setr(C, '(' + ' .. '.join(self.r(x) for x in range(A, B + 1)) + ')')
         elif name == 'LEN':

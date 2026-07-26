@@ -9,12 +9,32 @@ from .analyse import analyse
 from .spec import Spec
 
 
+def load_image(path):
+    """Read a bytecode image captured at run time.
+
+    A staged loader only decrypts its real image while running, so the image
+    arrives from outside the file.  Accept it either raw or base64 - whichever
+    the capture hook happened to write.
+    """
+    with open(path, 'rb') as fh:
+        raw = fh.read()
+    stripped = bytes(c for c in raw if c not in (32, 13, 10, 9))
+    b64chars = set(b'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=')
+    if stripped and set(stripped) <= b64chars and len(stripped) % 4 == 0:
+        import base64
+        try:
+            return base64.b64decode(stripped, validate=True)
+        except Exception:
+            pass
+    return raw
+
+
 def read_source(path):
     with io.open(path, encoding='utf-8', errors='surrogateescape') as fh:
         return fh.read()
 
 
-def build(path, profile=None, verbose=False):
+def build(path, profile=None, verbose=False, image=None):
     src = read_source(path)
     prof = Spec.load(profile) if profile else None
     spec, rep, norm = analyse(src, prof)
@@ -24,13 +44,19 @@ def build(path, profile=None, verbose=False):
     if missing:
         sys.stderr.write('incomplete VM spec:\n  - %s\n' % '\n  - '.join(missing))
         sys.stderr.write('run `luauvmp inspect` and pin the missing values with --profile\n')
-    blob = prelude.find_payload(norm)
-    if not blob:
-        raise SystemExit('no base64 payload found')
-    chain = prelude.payload_pipeline(norm, blob) or ['base64', 'lzss']
-    if verbose:
-        sys.stderr.write('  payload pipeline    : %s\n' % ' -> '.join(chain))
-    data = container.unpack(blob, chain)
+    if image:
+        data = load_image(image)
+        if verbose:
+            sys.stderr.write('  payload             : %s (%d bytes, external)\n'
+                             % (image, len(data)))
+    else:
+        blob = prelude.find_payload(norm)
+        if not blob:
+            raise SystemExit('no base64 payload found')
+        chain = prelude.payload_pipeline(norm, blob) or ['base64', 'lzss']
+        if verbose:
+            sys.stderr.write('  payload pipeline    : %s\n' % ' -> '.join(chain))
+        data = container.unpack(blob, chain)
     root, used = container.parse(data, spec)
     if used != len(data):
         sys.stderr.write('warning: consumed %d of %d payload bytes\n' % (used, len(data)))
@@ -70,7 +96,7 @@ def _report(rep, spec):
 
 
 def cmd_deobf(args):
-    spec, rep, norm, root, data = build(args.input, args.profile, args.verbose)
+    spec, rep, norm, root, data = build(args.input, args.profile, args.verbose, args.image)
     base = args.output or os.path.splitext(args.input)[0]
     src = decompile.decompile(root, spec)
     _write(base + '.deobf.lua', src)
@@ -146,6 +172,10 @@ def main(argv=None):
     d.add_argument('input')
     d.add_argument('-o', '--output', help='output basename (default: input without extension)')
     d.add_argument('-p', '--profile', help='JSON spec profile to merge over auto-analysis')
+    d.add_argument('--image', metavar='FILE',
+                   help='decode this bytecode image instead of the one in the file, '
+                        'using the VM spec recovered from it (for staged loaders; '
+                        'raw or base64)')
     d.add_argument('--disasm', action='store_true', help='also write the disassembly')
     d.add_argument('--strings', action='store_true', help='also write recovered strings')
     d.add_argument('--spec', action='store_true', help='also write the recovered VM spec')

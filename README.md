@@ -66,6 +66,70 @@ luauvmp deobf sample.txt --profile profiles/foxname-2026-07.json
 A profile is a partial `Spec` merged over auto-analysis, so you only list the
 fields that need overriding.
 
+## MoonVeil, and other staged loaders
+
+Some builds - *MoonVeil v1.4.5* among them - do not put the script in the file at
+all.  Run the tool normally first:
+
+```bash
+luauvmp deobf sample.txt -v
+```
+
+If the decompiled output is only a handful of lines and looks like this, the
+payload is staged:
+
+```lua
+local v1 = up1(<blob>)                       -- load the key proto
+local v3 = up0(v1, {})
+local v4 = up1(up2(<big blob>, "<key>", up3(v3())))   -- load the real script
+return up0(v4, {})(...)
+```
+
+The container, the opcodes and this stub all come out of the file, but the second
+image is decrypted with a value the stub computes while running, so it is not in
+the file to be found.
+
+### Capturing the second image without running the script
+
+You do not have to execute the payload to get it - only the stub.  Hook the
+loader (the local the tail call hands the payload to, `y` below), count the
+calls, and on the one that receives the second image write it out and return an
+empty function.  Insert this at the `y = <loader>` assignment near the end of the
+file:
+
+```lua
+y = gc                                  -- the loader, as the file already had it
+do
+    local real, n = y, 0
+    y = function(bc, env)
+        n = n + 1
+        if n >= 3 then                  -- 1: outer payload, 2: key proto
+            writefile("stage2.b64", base64_encode(bc))
+            return function() end       -- captured; never executed
+        end
+        return real(bc, env)
+    end
+end
+```
+
+Run the patched file in any Luau executor.  Nothing from the second image runs:
+the stub loads it, receives an empty function, calls it, and stops.  Check the
+call sizes if you want to be sure - on the reference sample they were 136 534,
+2 754 and 128 231 bytes.
+
+### Decoding the capture
+
+The captured image is an ordinary container, so hand it back with `--image`.  The
+VM spec still comes from the loader; only the bytecode comes from the capture.
+Raw or base64 both work:
+
+```bash
+luauvmp deobf sample.txt --image stage2.b64 --strings -v
+```
+
+On the reference sample that produced 128 231 bytes parsed byte-exact, 287
+protos and ~3 900 lines of Lua with no unknown opcodes.
+
 ## What gets recovered
 
 | Layer | Recovered by |
@@ -94,13 +158,15 @@ fields that need overriding.
 |---|---|---|---|---|
 | build A | 101 KB | 35 KB (100% parsed) | 65 | 1 155 lines, every opcode identified |
 | build B | 240 KB | 193 KB (100% parsed) | 700+ | 7 800 lines, every opcode identified |
-| build C | 253 KB | 137 KB (100% parsed) | 1 | staged loader; first stage recovered in full |
+| build C | 253 KB | 137 KB (100% parsed) | 1 | staged loader, first stage recovered in full |
+| build C stage 2 | - | 128 KB (100% parsed) | 287 | 3 900 lines, every opcode identified |
 
 Build C is a *MoonVeil v1.4.5* build and stages its payload: the bytecode in the
-file is a 28-instruction stub that decrypts a second bytecode image and feeds it
-back to the same loader.  The container, the opcodes and the stub all come out,
-but the second stage is keyed on a value the stub computes at run time, so
-static analysis stops there - see `docs/format.md`.
+file is a 28-instruction stub that decrypts a second image and feeds it back to
+the same loader.  The second image is keyed on a value the stub computes at run
+time, so it cannot be decrypted from the file alone - but it only takes hooking
+the loader to capture it *without executing it*, after which this tool decodes it
+like any other container.  `docs/format.md` has the hook.
 
 The two builds share no keys, no opcode numbers, no field slots, no constant
 type codes and not even the same dispatch loop shape — everything was derived
