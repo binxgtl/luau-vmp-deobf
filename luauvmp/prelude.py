@@ -69,8 +69,10 @@ def find_string_helper(src):
     counts = {}
     for m in re.finditer(r"\b([A-Za-z_]\w*)\(\s*(" + LIT + r")\s*,\s*(" + LIT + r")\s*\)", src):
         counts[m.group(1)] = counts.get(m.group(1), 0) + 1
+    # the helper may be declared inline (`local f = function`) or pre-declared in a
+    # block of locals and assigned later (`f = function`), depending on the build
     cands = [(n, c) for n, c in counts.items() if c >= 3 and re.search(
-        r"local\s+" + re.escape(n) + r"\s*=\s*(?:\()?function\(", src)]
+        r"(?:^|[;\s])(?:local\s+)?" + re.escape(n) + r"\s*=\s*\(?function\(", src)]
     if not cands:
         return None
     cands.sort(key=lambda kv: -kv[1])
@@ -288,6 +290,51 @@ def neutralise_if_expressions(src):
 
 
 # --------------------------------------------------------------------------- payload
+B64_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
+
+
+def _classify_transform(src, name):
+    """Work out what a function wrapping the payload actually does."""
+    m = re.search(r"(?:^|[;\s])(?:local\s+)?" + re.escape(name) + r"\s*=\s*\(?function\(", src)
+    if not m:
+        return None
+    body = src[m.end():m.end() + 1200]
+    if B64_ALPHABET in body:
+        return 'base64'
+    if '">I2"' in body or "'>I2'" in body:
+        return 'lzss'
+    return None
+
+
+def payload_pipeline(src, blob=None):
+    """Which decoders the loader applies to the payload, innermost first.
+
+    One build packs `loader(lzss(base64(blob)))`, another `loader(base64(blob))`.
+    Reading the call chain is the only way to know which.
+    """
+    blob = blob or find_payload(src)
+    if not blob:
+        return []
+    i = src.find(blob[:48])
+    if i < 0:
+        return []
+    head = src[:i].rstrip("'\"")          # drop the literal's opening quote
+    chain = []
+    while True:
+        head = head.rstrip()
+        # Lua lets a call on a string literal drop its parentheses (`f'...'`),
+        # so the wrapping name may or may not be followed by one.
+        m = re.search(r"([A-Za-z_]\w*)\s*(\()?\s*$", head)
+        if not m:
+            break
+        kind = _classify_transform(src, m.group(1))
+        if not kind:
+            break                          # reached the loader itself
+        chain.append(kind)
+        head = head[:m.start()].rstrip().rstrip('(')
+    return chain          # innermost first
+
+
 def find_payload(src, minlen=200):
     """Return the longest base64 string literal - the packed bytecode blob."""
     best = None

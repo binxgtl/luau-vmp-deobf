@@ -74,7 +74,8 @@ fields that need overriding.
 | XOR'd string literals | `prelude.decrypt_strings` — the helper is found by call-site fingerprint |
 | Control-flow flattening | `prelude.resolve_states` + `deflatten` — the memoised `T[k] = bxor(a,K1) - bxor(b,K2)` jump tables are evaluated statically |
 | Dispatch loop shape (`while ... do` or `repeat ... until`) | `deflatten.loop_offsets` |
-| Payload packing | `container.lzss_decompress` — window/length bits read from the loader |
+| Payload decode chain — base64 alone, or base64 + LZSS | `prelude.payload_pipeline` |
+| String helper declared inline or pre-declared | `prelude.find_string_helper` |
 | Byte / varint / instruction-word XOR keys | `analyse.analyse_reader` |
 | Instruction field slots (A, B, C, D, E, aux, K, KC, K1, K2, KN, kmode, opcode) | `analyse.analyse_reader` |
 | Operand layout codes (ABC / AD / AE) | `analyse._type_codes` |
@@ -93,6 +94,13 @@ fields that need overriding.
 |---|---|---|---|---|
 | build A | 101 KB | 35 KB (100% parsed) | 65 | 1 155 lines, every opcode identified |
 | build B | 240 KB | 193 KB (100% parsed) | 700+ | 7 800 lines, every opcode identified |
+| build C | 253 KB | 137 KB (100% parsed) | 1 | staged loader; first stage recovered in full |
+
+Build C is a *MoonVeil v1.4.5* build and stages its payload: the bytecode in the
+file is a 28-instruction stub that decrypts a second bytecode image and feeds it
+back to the same loader.  The container, the opcodes and the stub all come out,
+but the second stage is keyed on a value the stub computes at run time, so
+static analysis stops there - see `docs/format.md`.
 
 The two builds share no keys, no opcode numbers, no field slots, no constant
 type codes and not even the same dispatch loop shape — everything was derived

@@ -53,8 +53,19 @@ def lzss_decompress(data, window_bits=11, len_bits=5, min_match=3):
     return b''.join(out)
 
 
-def unpack(blob, **kw):
-    return lzss_decompress(base64.b64decode(blob), **kw)
+def unpack(blob, pipeline=('base64', 'lzss'), **kw):
+    """Apply the loader's own decode chain, innermost first."""
+    data = blob
+    for step in pipeline:
+        if step == 'base64':
+            data = base64.b64decode(data)
+        elif step == 'lzss':
+            data = lzss_decompress(data, **kw)
+        else:
+            raise ValueError('unknown payload transform %r' % step)
+    if isinstance(data, str):
+        data = base64.b64decode(data)
+    return data
 
 
 # --------------------------------------------------------------------------- reader

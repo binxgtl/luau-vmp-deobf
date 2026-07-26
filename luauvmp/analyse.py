@@ -301,18 +301,54 @@ def _branch_text(lin, state, depth=16):
     return '\n'.join(out)
 
 
+def _reachable(lin, state, depth=16, barrier=()):
+    """Blocks reachable from `state`, without crossing `barrier`.
+
+    The constant reader is a loop, so without a barrier every arm reaches every
+    other arm and nothing is distinguishing.  Blocking the switch head and the
+    sibling arms keeps each walk inside its own branch.
+    """
+    seen, stack = set(), [(state, 0)]
+    while stack:
+        v, d = stack.pop()
+        if v in seen or d > depth or v not in lin.blocks:
+            continue
+        seen.add(v)
+        for n in deflatten.successors(lin.blocks[v], lin.state):
+            if n not in barrier:
+                stack.append((n, d + 1))
+    return seen
+
+
 def _classify_consts(lin, entry, var):
     """Work out which constant type code means what, from what its arm reads.
 
-    Builds differ in how many types they emit: the reference build has four
-    (nil / int / string / double), others add boolean and empty-table.
+    Builds differ in how many types they emit: one has four (nil / int / string /
+    double), others add boolean and empty-table.  The arms rejoin on a shared
+    tail, so only blocks reachable from a *single* arm are evidence - otherwise
+    every arm looks like it reads every format.
     """
+    arms = [(lo, state) for lo, hi, state in dispatch_ranges(lin, entry, var, 0, 15)
+            if lo == hi]
+    heads = {s for _lo, s in arms} | {entry}
+
+    def walk_all(barrier):
+        r = {lo: _reachable(lin, st, barrier=barrier - {st}) for lo, st in arms}
+        joined = set()
+        for a in r:
+            for b in r:
+                if a != b:
+                    joined |= r[a] & r[b]
+        return r, joined
+
+    # First pass finds where the arms rejoin; the second stops there, so an arm
+    # that stores its value immediately cannot wander into the reader's next loop.
+    _first, join = walk_all(heads)
+    reach, shared = walk_all(heads | join)
     out = {}
-    for lo, hi, state in dispatch_ranges(lin, entry, var, 0, 15):
-        if lo != hi:
-            continue
+    for lo, state in arms:
         head = lin.text(state).replace(' ', '')
-        body = _branch_text(lin, state).replace(' ', '')
+        body = '\n'.join(lin.text(v) for v in reach[lo] - shared).replace(' ', '')
         if '"<d"' in body:
             out[lo] = 'double'
         elif '"c"..' in body:

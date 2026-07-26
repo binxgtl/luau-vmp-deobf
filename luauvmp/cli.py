@@ -27,7 +27,10 @@ def build(path, profile=None, verbose=False):
     blob = prelude.find_payload(norm)
     if not blob:
         raise SystemExit('no base64 payload found')
-    data = container.unpack(blob)
+    chain = prelude.payload_pipeline(norm, blob) or ['base64', 'lzss']
+    if verbose:
+        sys.stderr.write('  payload pipeline    : %s\n' % ' -> '.join(chain))
+    data = container.unpack(blob, chain)
     root, used = container.parse(data, spec)
     if used != len(data):
         sys.stderr.write('warning: consumed %d of %d payload bytes\n' % (used, len(data)))
@@ -121,7 +124,7 @@ def cmd_unpack(args):
     blob = prelude.find_payload(norm)
     if not blob:
         raise SystemExit('no base64 payload found')
-    data = container.unpack(blob)
+    data = container.unpack(blob, prelude.payload_pipeline(norm, blob) or ['base64', 'lzss'])
     base = args.output or os.path.splitext(args.input)[0]
     with open(base + '.bytecode.bin', 'wb') as fh:
         fh.write(data)

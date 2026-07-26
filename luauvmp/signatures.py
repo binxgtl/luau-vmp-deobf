@@ -12,6 +12,8 @@ SIGNATURES = {
         'ADDK',
     '@0:\n!$0$==#&!$0$==#=>GOTO@3\n!$0$==#&!$0$==#=>GOTO@6\n!$0$==#&$0$==#=>GOTO@2\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=1,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@6\n=>PC-=1\n@2:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@6\n=>PC-=1\n@3:\n!$0$==#=>GOTO@5\n!$0$==#=>GOTO@6\n$0$==#=>GOTO@4\n@4:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@6\n=>PC-=1\n@5:\n=>GOTO@6\n=>REG[$1$]=nil':
         'CALL',
+    '@0:\n!t0==0=>GOTO@2\n!t0==0=>GOTO@3\n=>t1,t2=t3(t4(t5(REG,t6+1,t6+t7)))\n=>t4=REG[t6]\n=>t6=XOR($0$,#)\n=>t8=XOR($1$,#)\n=>t0=XOR($2$,#)\n=>t7=t8==0andSa-t9-1\nt0==0=>GOTO@1\n@1:\n=>GOTO@3\n=>t10=t6+t2-1\n@2:\n=>GOTO@3\n=>t2=t0-1\n@3:\n=>GOTO@4':
+        'CALL',
     '@0:\n!t0==0=>GOTO@2\n!t0==0=>GOTO@3\n=>t1,t2=t3(t4(t5(REG,t6+1,t6+t7)))\n=>t4=REG[t6]\n=>t6=XOR($0$,#)\n=>t8=XOR($1$,#)\n=>t0=XOR($2$,#)\n=>t7=t8==0andkb-t9-1\nt0==0=>GOTO@1\n@1:\n=>GOTO@3\n=>t10=t6+t2-1\n@2:\n=>GOTO@3\n=>t2=t0-1\n@3:\n=>GOTO@4':
         'CALL',
     '@0:\n!t0==0=>GOTO@2\n!t0==0=>GOTO@3\n=>t1,t2=t3(t4(t5(REG,t6+1,t6+t7)))\n=>t4=REG[t6]\n=>t6=XOR($0$,#)\n=>t8=XOR($1$,#)\n=>t0=XOR($2$,#)\n=>t7=t8==0andwa-t9-1\nt0==0=>GOTO@1\n@1:\n=>GOTO@3\n=>t10=t6+t2-1\n@2:\n=>GOTO@3\n=>t2=t0-1\n@3:\n=>GOTO@4':
@@ -31,6 +33,8 @@ SIGNATURES = {
     '@0:\n=>GOTO@1\n=>t0=CODE[PC]\n=>t1=nil\n@1:\n=>GOTO@2\n=>t2=\'\'\n=>t3="#"..t3\n=>t4=#\n=>t3=$0$\n=>t5=(#t6-1)+#\n=>t7=1\n=>t6=t0[#]\n@2:\n!t5~=t5=>GOTO@4\n=>t8=t4\nt5~=t5=>GOTO@3\n@3:\n=>GOTO@5\n=>t1=t2\n@4:\n!(t7>=0andJ>t5)or((t7<0orr_~=t7)t9<t5)=>GOTO@6\n(t7>=0andJ>t5)or((t7<0orr_~=t7)t9<t5)=>GOTO@3\n@5:\n=>$1$=#\n=>GOTO@8\n=>t0[#]=t1\n@6:\n=>GOTO@7\n=>t2=t2..t10(t11(t12(t6,(t8-#)+1),t12(t3,(t8-#)%#t3+1)))\n@7:\n!t4~=t4=>GOTO@4\n=>t8=t4\n=>t4=t4+t7\nt4~=t4=>GOTO@3':
         'DECSTR',
     '@0:\n=>GOTO@1\n=>t0=CODE[PC]\n=>t1=nil\n@1:\n=>GOTO@2\n=>t2=\'\'\n=>t3="#"..t3\n=>t4=#\n=>t3=$0$\n=>t5=(#t6-1)+#\n=>t7=1\n=>t6=t0[#]\n@2:\n!t5~=t5=>GOTO@4\n=>t8=t4\nt5~=t5=>GOTO@3\n@3:\n=>GOTO@5\n=>t1=t2\n@4:\n!(t7>=0andgc>t5)or((t7<0ormb~=t7)t9<t5)=>GOTO@6\n(t7>=0andgc>t5)or((t7<0ormb~=t7)t9<t5)=>GOTO@3\n@5:\n=>$1$=#\n=>GOTO@8\n=>t0[#]=t1\n@6:\n=>GOTO@7\n=>t2=t2..t10(t11(t12(t6,(t8-#)+1),t12(t3,(t8-#)%#t3+1)))\n@7:\n!t4~=t4=>GOTO@4\n=>t8=t4\n=>t4=t4+t7\nt4~=t4=>GOTO@3':
+        'DECSTR',
+    '@0:\n=>GOTO@1\n=>t0=CODE[PC]\n=>t1=nil\n@1:\n=>GOTO@2\n=>t2=\'\'\n=>t3="#"..t3\n=>t4=#\n=>t3=$0$\n=>t5=(#t6-1)+#\n=>t7=1\n=>t6=t0[#]\n@2:\n!t5~=t5=>GOTO@4\n=>t8=t4\nt5~=t5=>GOTO@3\n@3:\n=>GOTO@5\n=>t1=t2\n@4:\n!(t7>=0andib>t5)or((t7<0orYa~=t7)t9<t5)=>GOTO@6\n(t7>=0andib>t5)or((t7<0orYa~=t7)t9<t5)=>GOTO@3\n@5:\n=>$1$=#\n=>GOTO@8\n=>t0[#]=t1\n@6:\n=>GOTO@7\n=>t2=t2..t10(t11(t12(t6,(t8-#)+1),t12(t3,(t8-#)%#t3+1)))\n@7:\n!t4~=t4=>GOTO@4\n=>t8=t4\n=>t4=t4+t7\nt4~=t4=>GOTO@3':
         'DECSTR',
     '@0:\n=>GOTO@1\n=>REG[$0$]=REG[$1$]/REG[$2$]':
         'DIV',
@@ -74,6 +78,8 @@ SIGNATURES = {
         'GETVARARGS',
     '@0:\n!$0$==#=>GOTO@2\n!$0$==#=>GOTO@5\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@5\n=>PC-=1\n@2:\n!t0==-1=>GOTO@4\n!t0==-1=>GOTO@4\n=>t1=$1$\n=>t0=$2$-1\nt0==-1=>GOTO@3\n@3:\n=>GOTO@4\n=>t2=t1+t0-1\n=>t0=t3[#]\n@4:\n=>GOTO@5':
         'GETVARARGS',
+    '@0:\n!$0$==#=>GOTO@2\n!$0$==#=>GOTO@7\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@7\n=>PC-=1\n@2:\n!$0$==#=>GOTO@4\n!$0$==#=>GOTO@7\n$0$==#=>GOTO@3\n@3:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@7\n=>PC-=1\n@4:\n!t0==-1=>GOTO@6\n=>t1=$1$\n=>t0=$2$-1\nt0==-1=>GOTO@5\n@5:\n=>GOTO@6\n=>t2=t1+t0-1\n=>t0=t3[#]\n@6:\n=>GOTO@7':
+        'GETVARARGS',
     '@0:\n!REG[$0$]=>GOTO@2\n!REG[$0$]=>GOTO@2\nREG[$0$]=>GOTO@1\n@1:\n=>GOTO@2\n=>PC+=$1$':
         'JUMP',
     '@0:\n=>GOTO@1\n=>PC+=$0$':
@@ -112,6 +118,8 @@ SIGNATURES = {
         'LOADNIL',
     '@0:\n=>GOTO@1\n=>REG[$0$]=REG[$1$]%$2$':
         'MODK',
+    '@0:\n!$0$==#&!$0$==#&!$0$==#=>GOTO@4\n!$0$==#&!$0$==#&!$0$==#=>GOTO@5\n!$0$==#&!$0$==#&$0$==#=>GOTO@3\n!$0$==#&$0$==#=>GOTO@2\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=27,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@5\n=>PC-=1\n@2:\n=>CODE[PC]={[#]=13,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@5\n=>PC-=1\n@3:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@5\n=>PC-=1\n@4:\n=>GOTO@5\n=>REG[$1$]=REG[$2$]':
+        'MOVE',
     '@0:\n!$0$==#&!$0$==#=>GOTO@3\n!$0$==#&!$0$==#=>GOTO@4\n!$0$==#&$0$==#=>GOTO@2\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@4\n=>PC-=1\n@2:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@4\n=>PC-=1\n@3:\n=>GOTO@4\n=>REG[$1$]=REG[$2$]':
         'MOVE',
     '@0:\n!$0$==#=>GOTO@2\n!$0$==#=>GOTO@3\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@3\n=>PC-=1\n@2:\n=>GOTO@3\n=>REG[$1$]=REG[$2$]':
@@ -144,6 +152,8 @@ SIGNATURES = {
         'RETURN',
     '@0:\n!$0$==#&!$0$==#=>GOTO@3\n!$0$==#&!$0$==#=>GOTO@9\n!$0$==#&$0$==#=>GOTO@2\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=28,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@9\n=>PC-=1\n@2:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@9\n=>PC-=1\n@3:\n!$0$==#=>GOTO@5\n!$0$==#=>GOTO@9\n$0$==#=>GOTO@4\n@4:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@9\n=>PC-=1\n@5:\n!t0==-1=>GOTO@7\n!t0==-1=>GOTO@8\n=>t1=$1$\n=>t2=$2$\n=>t0=t2-1\nt0==-1=>GOTO@6\n@6:\n=>GOTO@8\n=>t3=t4-t1+1\n@7:\n=>GOTO@8\n=>t3=t2-1\n@8:\n=>t5(REG,t1,t1+t3-1)':
         'RETURN',
+    '@0:\n!$0$==#=>GOTO@12\n!$0$==#=>GOTO@2\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@12\n=>PC-=1\n@2:\n!$0$==#=>GOTO@12\n!$0$==#=>GOTO@4\n$0$==#=>GOTO@3\n@3:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@12\n=>PC-=1\n@4:\n!$0$==#=>GOTO@12\n!$0$==#=>GOTO@6\n$0$==#=>GOTO@5\n@5:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@12\n=>PC-=1\n@6:\n!$0$==#=>GOTO@12\n!$0$==#=>GOTO@8\n$0$==#=>GOTO@7\n@7:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@12\n=>PC-=1\n@8:\n!t0==-1=>GOTO@10\n!t0==-1=>GOTO@11\n=>t1=$1$\n=>t2=$2$\n=>t0=t2-1\nt0==-1=>GOTO@9\n@9:\n=>GOTO@11\n=>t3=t4-t1+1\n@10:\n=>GOTO@11\n=>t3=t2-1\n@11:\n=>t5(REG,t1,t1+t3-1)':
+        'RETURN',
     '@0:\n!t0==-1=>GOTO@2\n!t0==-1=>GOTO@2\n=>t1=$0$\n=>t2=$1$\n=>t0=$2$-1\nt0==-1=>GOTO@1\n@1:\n=>GOTO@2\n=>t0=t3-t2+1\n@2:\n=>GOTO@3\n=>PC+=1':
         'SETLIST',
     '@0:\n!t0==-1=>GOTO@2\n=>t1=$0$\n=>t2=$1$\n=>t0=$2$-1\nt0==-1=>GOTO@1\n@1:\n=>GOTO@2\n=>t0=t3-t2+1\n@2:\n=>GOTO@3\n=>PC+=1':
@@ -172,6 +182,8 @@ REFERENCE_FIELDS = {
         ['C', 'A', 'K'],
     '@0:\n!$0$==#&!$0$==#=>GOTO@3\n!$0$==#&!$0$==#=>GOTO@6\n!$0$==#&$0$==#=>GOTO@2\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=1,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@6\n=>PC-=1\n@2:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@6\n=>PC-=1\n@3:\n!$0$==#=>GOTO@5\n!$0$==#=>GOTO@6\n$0$==#=>GOTO@4\n@4:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@6\n=>PC-=1\n@5:\n=>GOTO@6\n=>REG[$1$]=nil':
         ['C', 'B', 'A'],
+    '@0:\n!t0==0=>GOTO@2\n!t0==0=>GOTO@3\n=>t1,t2=t3(t4(t5(REG,t6+1,t6+t7)))\n=>t4=REG[t6]\n=>t6=XOR($0$,#)\n=>t8=XOR($1$,#)\n=>t0=XOR($2$,#)\n=>t7=t8==0andSa-t9-1\nt0==0=>GOTO@1\n@1:\n=>GOTO@3\n=>t10=t6+t2-1\n@2:\n=>GOTO@3\n=>t2=t0-1\n@3:\n=>GOTO@4':
+        ['C', 'B', 'A'],
     '@0:\n!t0==0=>GOTO@2\n!t0==0=>GOTO@3\n=>t1,t2=t3(t4(t5(REG,t6+1,t6+t7)))\n=>t4=REG[t6]\n=>t6=XOR($0$,#)\n=>t8=XOR($1$,#)\n=>t0=XOR($2$,#)\n=>t7=t8==0andkb-t9-1\nt0==0=>GOTO@1\n@1:\n=>GOTO@3\n=>t10=t6+t2-1\n@2:\n=>GOTO@3\n=>t2=t0-1\n@3:\n=>GOTO@4':
         ['C', 'B', 'A'],
     '@0:\n!t0==0=>GOTO@2\n!t0==0=>GOTO@3\n=>t1,t2=t3(t4(t5(REG,t6+1,t6+t7)))\n=>t4=REG[t6]\n=>t6=XOR($0$,#)\n=>t8=XOR($1$,#)\n=>t0=XOR($2$,#)\n=>t7=t8==0andwa-t9-1\nt0==0=>GOTO@1\n@1:\n=>GOTO@3\n=>t10=t6+t2-1\n@2:\n=>GOTO@3\n=>t2=t0-1\n@3:\n=>GOTO@4':
@@ -191,6 +203,8 @@ REFERENCE_FIELDS = {
     '@0:\n=>GOTO@1\n=>t0=CODE[PC]\n=>t1=nil\n@1:\n=>GOTO@2\n=>t2=\'\'\n=>t3="#"..t3\n=>t4=#\n=>t3=$0$\n=>t5=(#t6-1)+#\n=>t7=1\n=>t6=t0[#]\n@2:\n!t5~=t5=>GOTO@4\n=>t8=t4\nt5~=t5=>GOTO@3\n@3:\n=>GOTO@5\n=>t1=t2\n@4:\n!(t7>=0andJ>t5)or((t7<0orr_~=t7)t9<t5)=>GOTO@6\n(t7>=0andJ>t5)or((t7<0orr_~=t7)t9<t5)=>GOTO@3\n@5:\n=>$1$=#\n=>GOTO@8\n=>t0[#]=t1\n@6:\n=>GOTO@7\n=>t2=t2..t10(t11(t12(t6,(t8-#)+1),t12(t3,(t8-#)%#t3+1)))\n@7:\n!t4~=t4=>GOTO@4\n=>t8=t4\n=>t4=t4+t7\nt4~=t4=>GOTO@3':
         ['K', 'op'],
     '@0:\n=>GOTO@1\n=>t0=CODE[PC]\n=>t1=nil\n@1:\n=>GOTO@2\n=>t2=\'\'\n=>t3="#"..t3\n=>t4=#\n=>t3=$0$\n=>t5=(#t6-1)+#\n=>t7=1\n=>t6=t0[#]\n@2:\n!t5~=t5=>GOTO@4\n=>t8=t4\nt5~=t5=>GOTO@3\n@3:\n=>GOTO@5\n=>t1=t2\n@4:\n!(t7>=0andgc>t5)or((t7<0ormb~=t7)t9<t5)=>GOTO@6\n(t7>=0andgc>t5)or((t7<0ormb~=t7)t9<t5)=>GOTO@3\n@5:\n=>$1$=#\n=>GOTO@8\n=>t0[#]=t1\n@6:\n=>GOTO@7\n=>t2=t2..t10(t11(t12(t6,(t8-#)+1),t12(t3,(t8-#)%#t3+1)))\n@7:\n!t4~=t4=>GOTO@4\n=>t8=t4\n=>t4=t4+t7\nt4~=t4=>GOTO@3':
+        ['K', 'op'],
+    '@0:\n=>GOTO@1\n=>t0=CODE[PC]\n=>t1=nil\n@1:\n=>GOTO@2\n=>t2=\'\'\n=>t3="#"..t3\n=>t4=#\n=>t3=$0$\n=>t5=(#t6-1)+#\n=>t7=1\n=>t6=t0[#]\n@2:\n!t5~=t5=>GOTO@4\n=>t8=t4\nt5~=t5=>GOTO@3\n@3:\n=>GOTO@5\n=>t1=t2\n@4:\n!(t7>=0andib>t5)or((t7<0orYa~=t7)t9<t5)=>GOTO@6\n(t7>=0andib>t5)or((t7<0orYa~=t7)t9<t5)=>GOTO@3\n@5:\n=>$1$=#\n=>GOTO@8\n=>t0[#]=t1\n@6:\n=>GOTO@7\n=>t2=t2..t10(t11(t12(t6,(t8-#)+1),t12(t3,(t8-#)%#t3+1)))\n@7:\n!t4~=t4=>GOTO@4\n=>t8=t4\n=>t4=t4+t7\nt4~=t4=>GOTO@3':
         ['K', 'op'],
     '@0:\n=>GOTO@1\n=>REG[$0$]=REG[$1$]/REG[$2$]':
         ['B', 'C', 'A'],
@@ -234,6 +248,8 @@ REFERENCE_FIELDS = {
         ['C', 'A', 'B'],
     '@0:\n!$0$==#=>GOTO@2\n!$0$==#=>GOTO@5\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@5\n=>PC-=1\n@2:\n!t0==-1=>GOTO@4\n!t0==-1=>GOTO@4\n=>t1=$1$\n=>t0=$2$-1\nt0==-1=>GOTO@3\n@3:\n=>GOTO@4\n=>t2=t1+t0-1\n=>t0=t3[#]\n@4:\n=>GOTO@5':
         ['C', 'A', 'B'],
+    '@0:\n!$0$==#=>GOTO@2\n!$0$==#=>GOTO@7\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@7\n=>PC-=1\n@2:\n!$0$==#=>GOTO@4\n!$0$==#=>GOTO@7\n$0$==#=>GOTO@3\n@3:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@7\n=>PC-=1\n@4:\n!t0==-1=>GOTO@6\n=>t1=$1$\n=>t0=$2$-1\nt0==-1=>GOTO@5\n@5:\n=>GOTO@6\n=>t2=t1+t0-1\n=>t0=t3[#]\n@6:\n=>GOTO@7':
+        ['C', 'A', 'B'],
     '@0:\n!REG[$0$]=>GOTO@2\n!REG[$0$]=>GOTO@2\nREG[$0$]=>GOTO@1\n@1:\n=>GOTO@2\n=>PC+=$1$':
         ['A', 'D'],
     '@0:\n=>GOTO@1\n=>PC+=$0$':
@@ -272,6 +288,8 @@ REFERENCE_FIELDS = {
         ['C', 'A', 'B'],
     '@0:\n=>GOTO@1\n=>REG[$0$]=REG[$1$]%$2$':
         ['A', 'C', 'K'],
+    '@0:\n!$0$==#&!$0$==#&!$0$==#=>GOTO@4\n!$0$==#&!$0$==#&!$0$==#=>GOTO@5\n!$0$==#&!$0$==#&$0$==#=>GOTO@3\n!$0$==#&$0$==#=>GOTO@2\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=27,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@5\n=>PC-=1\n@2:\n=>CODE[PC]={[#]=13,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@5\n=>PC-=1\n@3:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@5\n=>PC-=1\n@4:\n=>GOTO@5\n=>REG[$1$]=REG[$2$]':
+        ['C', 'A', 'B'],
     '@0:\n!$0$==#&!$0$==#=>GOTO@3\n!$0$==#&!$0$==#=>GOTO@4\n!$0$==#&$0$==#=>GOTO@2\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@4\n=>PC-=1\n@2:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@4\n=>PC-=1\n@3:\n=>GOTO@4\n=>REG[$1$]=REG[$2$]':
         ['C', 'A', 'B'],
     '@0:\n!$0$==#=>GOTO@2\n!$0$==#=>GOTO@3\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@3\n=>PC-=1\n@2:\n=>GOTO@3\n=>REG[$1$]=REG[$2$]':
@@ -303,6 +321,8 @@ REFERENCE_FIELDS = {
     '@0:\n!$0$==#&!$0$==#&!$0$==#=>GOTO@4\n!$0$==#&!$0$==#&!$0$==#=>GOTO@8\n!$0$==#&!$0$==#&$0$==#=>GOTO@3\n!$0$==#&$0$==#=>GOTO@2\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@8\n=>PC-=1\n@2:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@8\n=>PC-=1\n@3:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@8\n=>PC-=1\n@4:\n!t0==-1=>GOTO@6\n!t0==-1=>GOTO@7\n=>t1=$1$\n=>t2=$2$\n=>t0=t2-1\nt0==-1=>GOTO@5\n@5:\n=>GOTO@7\n=>t3=t4-t1+1\n@6:\n=>GOTO@7\n=>t3=t2-1\n@7:\n=>t5(REG,t1,t1+t3-1)':
         ['C', 'A', 'B'],
     '@0:\n!$0$==#&!$0$==#=>GOTO@3\n!$0$==#&!$0$==#=>GOTO@9\n!$0$==#&$0$==#=>GOTO@2\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=28,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@9\n=>PC-=1\n@2:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@9\n=>PC-=1\n@3:\n!$0$==#=>GOTO@5\n!$0$==#=>GOTO@9\n$0$==#=>GOTO@4\n@4:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@9\n=>PC-=1\n@5:\n!t0==-1=>GOTO@7\n!t0==-1=>GOTO@8\n=>t1=$1$\n=>t2=$2$\n=>t0=t2-1\nt0==-1=>GOTO@6\n@6:\n=>GOTO@8\n=>t3=t4-t1+1\n@7:\n=>GOTO@8\n=>t3=t2-1\n@8:\n=>t5(REG,t1,t1+t3-1)':
+        ['C', 'A', 'B'],
+    '@0:\n!$0$==#=>GOTO@12\n!$0$==#=>GOTO@2\n$0$==#=>GOTO@1\n@1:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@12\n=>PC-=1\n@2:\n!$0$==#=>GOTO@12\n!$0$==#=>GOTO@4\n$0$==#=>GOTO@3\n@3:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@12\n=>PC-=1\n@4:\n!$0$==#=>GOTO@12\n!$0$==#=>GOTO@6\n$0$==#=>GOTO@5\n@5:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@12\n=>PC-=1\n@6:\n!$0$==#=>GOTO@12\n!$0$==#=>GOTO@8\n$0$==#=>GOTO@7\n@7:\n=>CODE[PC]={[#]=#,[#]=XOR($1$,#),[#]=XOR($2$,#),[#]=0}\n=>GOTO@12\n=>PC-=1\n@8:\n!t0==-1=>GOTO@10\n!t0==-1=>GOTO@11\n=>t1=$1$\n=>t2=$2$\n=>t0=t2-1\nt0==-1=>GOTO@9\n@9:\n=>GOTO@11\n=>t3=t4-t1+1\n@10:\n=>GOTO@11\n=>t3=t2-1\n@11:\n=>t5(REG,t1,t1+t3-1)':
         ['C', 'A', 'B'],
     '@0:\n!t0==-1=>GOTO@2\n!t0==-1=>GOTO@2\n=>t1=$0$\n=>t2=$1$\n=>t0=$2$-1\nt0==-1=>GOTO@1\n@1:\n=>GOTO@2\n=>t0=t3-t2+1\n@2:\n=>GOTO@3\n=>PC+=1':
         ['C', 'A', 'B'],

@@ -691,7 +691,11 @@ class Dec:
 
 def decompile(root, spec):
     pr = Proto(root)
-    body = Dec(pr, spec, upnames=['NEWBOX']).run()
+    # Some builds hand the root proto a single upvalue: the heap-box allocator the
+    # protector uses for lifted locals.  Builds that pass a whole environment
+    # table instead get plain upvalue names.
+    upnames = ['NEWBOX'] if pr.nups == 1 else None
+    body = Dec(pr, spec, upnames=upnames).run()
     text = '\n'.join(body)
     text = re.sub(r'BOX:(b\d+)#[TI]', r'\1 --[[boxref]]', text)
     text = re.sub(r'BOX:(b\d+)', r'\1', text)

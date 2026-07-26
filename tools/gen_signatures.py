@@ -43,6 +43,10 @@ LABELS = {
         68: 'GETTABLEN', 148: 'CLOSEUPVALS', 209: 'SUBK',
         218: 'JUMPIFLT', 228: 'NEWCLOSURE', 238: 'DECIMPORT', 240: 'CONCAT',
     },
+    # third build - MoonVeil v1.4.5, staged payload
+    'script': {
+        10: 'DECSTR', 92: 'CALL', 106: 'GETVARARGS', 178: 'MOVE', 192: 'RETURN',
+    },
 }
 
 

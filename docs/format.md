@@ -1,7 +1,8 @@
 # The protector, layer by layer
 
-Notes from reverse-engineering the reference build. Every constant below is
-per-build random; the tool derives them rather than assuming them.
+Notes from reverse-engineering three builds; one identifies itself in a header
+comment as *MoonVeil Obfuscator v1.4.5*.  Every constant below is per-build
+random - the tool derives them rather than assuming them.
 
 ## 1. Loader source obfuscation
 
@@ -44,7 +45,11 @@ reachable state range recovered, which yields a plain state graph.
 
 ## 3. Payload packing
 
-`base64 → LZSS → bytecode`. The LZSS variant uses a control byte per 8 items;
+`base64 -> LZSS -> bytecode`, though not every build compresses: one applies
+base64 only.  Which decoders run is read off the loader's own call chain around
+the payload literal, since Lua lets the call drop its parentheses (`decode'...'`).
+
+The LZSS variant uses a control byte per 8 items;
 a set bit is a literal, a clear bit is a big-endian 16-bit word split into an
 11-bit backward offset and a 5-bit length (+3), against a 2048-byte window.
 
@@ -161,3 +166,21 @@ The reference build leaves a small table of closures **unencrypted** in the
 loader, referenced from the bytecode by name. They are the pieces the protector
 could not express in its own bytecode (varargs-heavy remote calls), and they leak
 a useful amount of the script's behaviour before any of the above is undone.
+
+
+## 10. Staged payloads
+
+One build does not put the script in the bytecode at all.  The image in the file
+is a 28-instruction stub:
+
+```lua
+local stage2a = load(<1.6 KB blob>)
+local key     = box(stage2a, {})
+local stage2  = load(decompress(<89 KB blob>, "<short key>", derive(key())))
+return box(stage2, {})(...)
+```
+
+The constants are still encrypted after the usual lazy-decrypt pass, because the
+decryption key is produced by *running* the first stage.  Everything up to and
+including that stub is recovered statically; going further needs the stub
+executed (or its logic reimplemented), which this tool deliberately does not do.
