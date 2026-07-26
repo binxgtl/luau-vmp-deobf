@@ -27,7 +27,7 @@ of it from the sample and tells you what it could not prove.
 Python 3.9+, no dependencies.
 
 ```bash
-git clone https://github.com/<you>/luau-vmp-deobf
+git clone https://github.com/binxgtl/luau-vmp-deobf
 cd luau-vmp-deobf
 pip install -e .
 ```
@@ -73,21 +73,35 @@ fields that need overriding.
 | Arithmetic constant noise (`12958+-12788`) | `prelude.fold_arith` |
 | XOR'd string literals | `prelude.decrypt_strings` — the helper is found by call-site fingerprint |
 | Control-flow flattening | `prelude.resolve_states` + `deflatten` — the memoised `T[k] = bxor(a,K1) - bxor(b,K2)` jump tables are evaluated statically |
+| Dispatch loop shape (`while ... do` or `repeat ... until`) | `deflatten.loop_offsets` |
 | Payload packing | `container.lzss_decompress` — window/length bits read from the loader |
 | Byte / varint / instruction-word XOR keys | `analyse.analyse_reader` |
-| Instruction field slots (A, B, C, D, E, aux, K, kmode, opcode) | `analyse.analyse_reader` |
-| Constant type codes and constant-mode codes | `analyse` (structural dispatch tracing) |
+| Instruction field slots (A, B, C, D, E, aux, K, KC, K1, K2, KN, kmode, opcode) | `analyse.analyse_reader` |
+| Operand layout codes (ABC / AD / AE) | `analyse._type_codes` |
+| Constant type codes — nil, int, double, string, boolean, table | `analyse._classify_consts` |
+| Constant-mode codes (all ten) | `analyse._kmode_codes` |
 | Opcode numbering | `analyse.analyse_vm` — handler fingerprinting against `signatures.py` |
 | Per-handler XOR masks (CALL, LOADN, NEWCLOSURE) | fingerprint by-product |
 | Self-modifying instruction rules | `mutations.extract` (path-sensitive) |
 | Lazy per-string / per-import decryption | `devirt.decrypt_strings` |
 | Heap-boxed upvalues | `decompile` (`bN --[[byref]]`) |
 
+## Tested on
+
+| Sample | Loader | Bytecode | Protos | Opcodes | Result |
+|---|---|---|---|---|---|
+| build A | 101 KB | 35 KB (100% parsed) | 65 | 49 | ~1150 lines, every opcode identified |
+| build B | 240 KB | 193 KB (100% parsed) | 700+ | 54 | ~14 500 lines, 48/54 opcodes identified |
+
+The two builds share no keys, no opcode numbers, no field slots, no constant
+type codes and not even the same dispatch loop shape — everything was derived
+per sample.  Build B additionally uses boolean and empty-table constants and a
+`repeat ... until` dispatch loop, both of which the analyser picks up on its own.
+
 ## Output quality
 
-On the reference sample (101 KB loader, 35 KB bytecode, 65 protos, 49 distinct
-opcodes) the decompiler emits ~1150 lines of Lua with all strings, imports,
-control flow, method calls, table constructors and closures reconstructed.
+The decompiler reconstructs strings, imports, control flow, method calls, table
+constructors and closures.
 
 It is a *readable* reconstruction, not a byte-exact recompile: registers become
 `vN` temporaries, and a handful of register-phi patterns are materialised as

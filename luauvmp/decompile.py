@@ -25,8 +25,11 @@ def S(v):
     if isinstance(v, bool):
         return 'true' if v else 'false'
     if isinstance(v, (int, float)):
-        if isinstance(v, float) and v == int(v) and abs(v) < 1e15:
-            return str(int(v))
+        if isinstance(v, float):
+            if v != v or v in (float('inf'), float('-inf')):
+                return repr(v)
+            if v == int(v) and abs(v) < 1e15:
+                return str(int(v))
         return repr(v)
     if isinstance(v, bytes):
         try:

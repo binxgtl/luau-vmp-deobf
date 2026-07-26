@@ -1,0 +1,595 @@
+{
+ "byte_key": 233,
+ "word_key": 569927222,
+ "varint_key": 2226367857,
+ "type_abc": 8,
+ "type_ad": 4,
+ "type_ae": 5,
+ "kmode_D": 3,
+ "kmode_E": 10,
+ "kmode_auxbool": 5,
+ "kmode_aux16": 9,
+ "kmode_import": 2,
+ "kmode_aux24": 7,
+ "kmode_B": 1,
+ "kmode_aux": 6,
+ "kmode_none": 8,
+ "kmode_A": 8,
+ "kmode_C": 4,
+ "const_types": {
+  "0": "table",
+  "1": "double",
+  "2": "boolean",
+  "3": "nil",
+  "4": "int",
+  "5": "string"
+ },
+ "opinfo": [],
+ "ops": {
+  "48": "JUMP",
+  "49": "JUMP",
+  "50": "JUMP",
+  "51": "JUMP",
+  "52": "JUMP",
+  "53": "JUMP",
+  "54": "JUMP",
+  "55": "JUMP",
+  "56": "JUMP",
+  "57": "JUMP",
+  "58": "JUMP",
+  "59": "JUMP",
+  "60": "JUMP",
+  "61": "JUMP",
+  "62": "JUMP",
+  "63": "JUMP",
+  "241": "JUMP",
+  "242": "JUMP",
+  "243": "JUMP",
+  "244": "JUMP",
+  "245": "JUMP",
+  "246": "JUMP",
+  "247": "JUMP",
+  "248": "JUMP",
+  "249": "JUMP",
+  "250": "JUMP",
+  "251": "JUMP",
+  "252": "JUMP",
+  "253": "JUMP",
+  "254": "JUMP",
+  "255": "JUMP",
+  "29": "GETTABLEN",
+  "30": "GETTABLEN",
+  "31": "GETTABLEN",
+  "32": "GETTABLEN",
+  "33": "GETTABLEN",
+  "34": "GETTABLEN",
+  "35": "GETTABLEN",
+  "36": "GETTABLEN",
+  "37": "GETTABLEN",
+  "38": "GETTABLEN",
+  "39": "GETTABLEN",
+  "40": "GETTABLEN",
+  "69": "JUMPIFNOTLE",
+  "70": "JUMPIFNOTLE",
+  "71": "JUMPIFNOTLE",
+  "72": "JUMPIFNOTLE",
+  "73": "JUMPIFNOTLE",
+  "74": "JUMPIFNOTLE",
+  "75": "JUMPIFNOTLE",
+  "76": "JUMPIFNOTLE",
+  "77": "JUMPIFNOTLE",
+  "78": "JUMPIFNOTLE",
+  "79": "JUMPIFNOTLE",
+  "80": "JUMPIFNOTLE",
+  "187": "NEWTABLE",
+  "188": "NEWTABLE",
+  "189": "NEWTABLE",
+  "190": "NEWTABLE",
+  "191": "NEWTABLE",
+  "192": "NEWTABLE",
+  "193": "NEWTABLE",
+  "194": "NEWTABLE",
+  "195": "NEWTABLE",
+  "196": "NEWTABLE",
+  "197": "NEWTABLE",
+  "198": "NEWTABLE",
+  "229": "DECIMPORT",
+  "230": "DECIMPORT",
+  "231": "DECIMPORT",
+  "232": "DECIMPORT",
+  "233": "DECIMPORT",
+  "234": "DECIMPORT",
+  "235": "DECIMPORT",
+  "236": "DECIMPORT",
+  "237": "DECIMPORT",
+  "238": "DECIMPORT",
+  "161": "SETTABLEN",
+  "162": "SETTABLEN",
+  "163": "SETTABLEN",
+  "164": "SETTABLEN",
+  "165": "SETTABLEN",
+  "166": "SETTABLEN",
+  "167": "SETTABLEN",
+  "168": "SETTABLEN",
+  "169": "SETTABLEN",
+  "121": "JUMPIFNOT",
+  "122": "JUMPIFNOT",
+  "123": "JUMPIFNOT",
+  "124": "JUMPIFNOT",
+  "125": "JUMPIFNOT",
+  "126": "JUMPIFNOT",
+  "127": "JUMPIFNOT",
+  "203": "NOP",
+  "204": "NOP",
+  "205": "NOP",
+  "206": "NOP",
+  "207": "NOP",
+  "208": "NOP",
+  "209": "NOP",
+  "98": "ADD",
+  "99": "ADD",
+  "100": "ADD",
+  "101": "ADD",
+  "102": "ADD",
+  "103": "ADD",
+  "113": "JUMPXEQKS",
+  "114": "JUMPXEQKS",
+  "115": "JUMPXEQKS",
+  "116": "JUMPXEQKS",
+  "117": "JUMPXEQKS",
+  "118": "JUMPXEQKS",
+  "155": "LOADB",
+  "156": "LOADB",
+  "157": "LOADB",
+  "158": "LOADB",
+  "159": "LOADB",
+  "160": "LOADB",
+  "17": "FORGPREP_F",
+  "18": "FORGPREP_F",
+  "19": "FORGPREP_F",
+  "20": "FORGPREP_F",
+  "21": "FORGPREP_F",
+  "91": "GETTABLEKS",
+  "92": "GETTABLEKS",
+  "93": "GETTABLEKS",
+  "94": "GETTABLEKS",
+  "95": "GETTABLEKS",
+  "104": "JUMP",
+  "105": "JUMP",
+  "106": "JUMP",
+  "107": "JUMP",
+  "108": "JUMP",
+  "177": "SUB",
+  "178": "SUB",
+  "179": "SUB",
+  "180": "SUB",
+  "181": "SUB",
+  "13": "MODK",
+  "14": "MODK",
+  "15": "MODK",
+  "16": "MODK",
+  "22": "FORGLOOP",
+  "23": "FORGLOOP",
+  "24": "FORGLOOP",
+  "25": "FORGLOOP",
+  "109": "MULK",
+  "110": "MULK",
+  "111": "MULK",
+  "112": "MULK",
+  "130": "JUMPXEQKB",
+  "131": "JUMPXEQKB",
+  "132": "JUMPXEQKB",
+  "133": "JUMPXEQKB",
+  "134": "FORGPREP",
+  "135": "FORGPREP",
+  "136": "FORGPREP",
+  "137": "FORGPREP",
+  "221": "JUMPIFEQ",
+  "222": "JUMPIFEQ",
+  "223": "JUMPIFEQ",
+  "224": "JUMPIFEQ",
+  "225": "NEWCLOSURE",
+  "226": "NEWCLOSURE",
+  "227": "NEWCLOSURE",
+  "228": "NEWCLOSURE",
+  "2": "JUMPIFNOTLT",
+  "3": "JUMPIFNOTLT",
+  "4": "JUMPIFNOTLT",
+  "8": "DIV",
+  "9": "DIV",
+  "10": "DIV",
+  "26": "MOVE",
+  "27": "MOVE",
+  "28": "MOVE",
+  "83": "NAMECALL",
+  "84": "NAMECALL",
+  "85": "NAMECALL",
+  "149": "LEN",
+  "150": "LEN",
+  "151": "LEN",
+  "152": "GETTABLE",
+  "153": "GETTABLE",
+  "154": "GETTABLE",
+  "172": "SETTABLE",
+  "173": "SETTABLE",
+  "174": "SETTABLE",
+  "200": "SETTABLEKS",
+  "201": "SETTABLEKS",
+  "202": "SETTABLEKS",
+  "5": "FORNPREP",
+  "6": "FORNPREP",
+  "11": "GETIMPORT",
+  "12": "GETIMPORT",
+  "87": "JUMPIFNOTEQ",
+  "88": "JUMPIFNOTEQ",
+  "89": "CALL",
+  "90": "CALL",
+  "96": "FORNLOOP",
+  "97": "FORNLOOP",
+  "119": "NOP",
+  "120": "NOP",
+  "128": "JUMPXEQKS",
+  "129": "JUMPXEQKS",
+  "139": "CALL",
+  "140": "CALL",
+  "175": "NEWTABLE",
+  "176": "NEWTABLE",
+  "210": "RETURN",
+  "211": "RETURN",
+  "219": "ADDK",
+  "220": "ADDK",
+  "239": "CONCAT",
+  "240": "CONCAT",
+  "0": "LOADN",
+  "1": "SETUPVAL",
+  "7": "LOADK",
+  "41": "NEWCLOSURE2",
+  "44": "DECSTR",
+  "81": "JUMPXEQKNIL",
+  "82": "FORGPREP_F",
+  "170": "NOP",
+  "171": "JUMPIFLE",
+  "199": "NOP"
+ },
+ "masks": {
+  "DECIMPORT": {
+   "xor": {
+    "B": 220,
+    "C": 146,
+    "A": 50
+   }
+  },
+  "MOVE": {
+   "xor": {
+    "A": 240,
+    "B": 195
+   }
+  },
+  "CALL": {
+   "xor": {
+    "B": 220,
+    "C": 146,
+    "A": 50
+   }
+  },
+  "RETURN": {
+   "xor": {
+    "A": 191,
+    "B": 162
+   }
+  },
+  "LOADN": {
+   "xor": {
+    "Du": 20335,
+    "A": 98
+   }
+  },
+  "NEWCLOSURE2": {
+   "xor": {
+    "Du": 16840,
+    "A": 50,
+    "B": 220,
+    "C": 146
+   }
+  }
+ },
+ "roles": {
+  "JUMP": [
+   "A",
+   "D"
+  ],
+  "GETTABLEN": [
+   "B",
+   "A",
+   "C"
+  ],
+  "JUMPIFNOTLE": [
+   "A",
+   "aux",
+   "D"
+  ],
+  "NEWTABLE": [
+   "A"
+  ],
+  "DECIMPORT": [
+   "f21924",
+   "K",
+   "op",
+   "f48804",
+   "B",
+   "C",
+   "A"
+  ],
+  "SETTABLEN": [
+   "A",
+   "B",
+   "C"
+  ],
+  "JUMPIFNOT": [
+   "A",
+   "D"
+  ],
+  "NOP": [],
+  "ADD": [
+   "B",
+   "C",
+   "A"
+  ],
+  "JUMPXEQKS": [
+   "K",
+   "KC",
+   "A",
+   "D"
+  ],
+  "LOADB": [
+   "B",
+   "A",
+   "C"
+  ],
+  "FORGPREP_F": [
+   "A",
+   "D"
+  ],
+  "GETTABLEKS": [
+   "K",
+   "C",
+   "B"
+  ],
+  "SUB": [
+   "B",
+   "A",
+   "C"
+  ],
+  "MODK": [
+   "B",
+   "C",
+   "K"
+  ],
+  "FORGLOOP": [
+   "A",
+   "K",
+   "D"
+  ],
+  "MULK": [
+   "B",
+   "A",
+   "K"
+  ],
+  "JUMPXEQKB": [
+   "K",
+   "KC",
+   "A",
+   "D"
+  ],
+  "FORGPREP": [
+   "A",
+   "D"
+  ],
+  "JUMPIFEQ": [
+   "A",
+   "aux",
+   "D"
+  ],
+  "NEWCLOSURE": [
+   "K",
+   "A"
+  ],
+  "JUMPIFNOTLT": [
+   "A",
+   "aux",
+   "D"
+  ],
+  "DIV": [
+   "B",
+   "C",
+   "A"
+  ],
+  "MOVE": [
+   "C",
+   "A",
+   "B"
+  ],
+  "NAMECALL": [
+   "B",
+   "A",
+   "K"
+  ],
+  "LEN": [
+   "A",
+   "B"
+  ],
+  "GETTABLE": [
+   "B",
+   "A",
+   "C"
+  ],
+  "SETTABLE": [
+   "C",
+   "A",
+   "B"
+  ],
+  "SETTABLEKS": [
+   "K",
+   "A",
+   "B"
+  ],
+  "FORNPREP": [
+   "A",
+   "D"
+  ],
+  "GETIMPORT": [
+   "f21924",
+   "K",
+   "A",
+   "f48804",
+   "f3136"
+  ],
+  "JUMPIFNOTEQ": [
+   "A",
+   "aux",
+   "D"
+  ],
+  "CALL": [
+   "B",
+   "C",
+   "A"
+  ],
+  "FORNLOOP": [
+   "A",
+   "D"
+  ],
+  "RETURN": [
+   "C",
+   "A",
+   "B"
+  ],
+  "ADDK": [
+   "A",
+   "C",
+   "K"
+  ],
+  "CONCAT": [
+   "C",
+   "B",
+   "A"
+  ],
+  "LOADN": [
+   "Du",
+   "A"
+  ],
+  "SETUPVAL": [
+   "B",
+   "A"
+  ],
+  "LOADK": [
+   "A",
+   "K"
+  ],
+  "NEWCLOSURE2": [
+   "Du",
+   "A",
+   "B",
+   "C"
+  ],
+  "DECSTR": [
+   "K",
+   "op"
+  ],
+  "JUMPXEQKNIL": [
+   "KC",
+   "A",
+   "D"
+  ],
+  "JUMPIFLE": [
+   "A",
+   "aux",
+   "D"
+  ]
+ },
+ "mutations": {
+  "26,82": [
+   151,
+   251,
+   133
+  ],
+  "27,82": [
+   151,
+   251,
+   133
+  ],
+  "28,82": [
+   151,
+   251,
+   133
+  ],
+  "26,138": [
+   72,
+   240,
+   195
+  ],
+  "27,138": [
+   72,
+   240,
+   195
+  ],
+  "28,138": [
+   72,
+   240,
+   195
+  ],
+  "210,132": [
+   28,
+   215,
+   9
+  ],
+  "211,132": [
+   28,
+   215,
+   9
+  ],
+  "210,138": [
+   138,
+   90,
+   133
+  ],
+  "211,138": [
+   138,
+   90,
+   133
+  ],
+  "210,197": [
+   186,
+   191,
+   162
+  ],
+  "211,197": [
+   186,
+   191,
+   162
+  ],
+  "138,34": [
+   211,
+   156,
+   104
+  ],
+  "138,70": [
+   140,
+   161,
+   141
+  ]
+ },
+ "dec_offset": {
+  "DECIMPORT": 1,
+  "DECSTR": 0
+ },
+ "str_prefix": [
+  46,
+  99,
+  225,
+  9,
+  165,
+  42,
+  167,
+  225
+ ]
+}

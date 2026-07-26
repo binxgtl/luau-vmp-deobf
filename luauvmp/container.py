@@ -150,6 +150,10 @@ def read_proto(r, spec):
             consts.append(r.raw(n) if n else b'')
         elif kind == 'int':
             consts.append(r.varint())
+        elif kind == 'boolean':
+            consts.append(r.byte() != 0)
+        elif kind == 'table':
+            consts.append({})
         elif kind == 'nil':
             consts.append(None)
         else:

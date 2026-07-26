@@ -25,8 +25,9 @@ per-build random; the tool derives them rather than assuming them.
 
 ## 2. Control-flow flattening
 
-Three functions — the bytecode reader, the interpreter and the entry wrapper —
-are flattened into
+Three functions - the bytecode reader, the interpreter and the entry wrapper -
+are flattened into a dispatch loop.  Some builds use `while state ~= X do`,
+others `repeat ... until state == X`; both look like
 
 ```lua
 local T, F = {}, function(a, b, k) T[k] = bxor(a, K1) - bxor(b, K2) return T[k] end
@@ -74,8 +75,9 @@ Every varint byte is XOR'd individually before accumulation, so the length
 prefix of a string is itself masked.
 
 Constant payloads: `double` (8 bytes LE), `string` (masked varint length + raw
-bytes), `int` (masked varint), `nil` (nothing). The four type codes are
-shuffled per build.
+bytes), `int` (masked varint), `boolean` (one masked byte), `table` (nothing,
+yields an empty table) and `nil` (nothing).  Not every build emits all six, and
+the type codes are shuffled per build.
 
 Each instruction record carries a `kmode` taken from a 256-entry info table
 `{operand_layout, kmode, has_aux}`. After the constant table is read, a patch
@@ -86,7 +88,8 @@ encoding (2-bit count + three 10-bit ids).
 
 Only three operand layouts decode anything: ABC (three bytes from bits 8/16/24),
 AD (byte + signed 16) and AE (signed 24). The other layout codes exist purely to
-pad the info table with plausible-looking junk.
+pad the info table with plausible-looking junk.  Which numeric code selects which
+layout is itself randomised - one build uses 1/7/2, another 8/4/5.
 
 ## 5. Opcode obfuscation
 

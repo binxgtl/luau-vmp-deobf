@@ -33,8 +33,8 @@ def build(path, profile=None, verbose=False):
         sys.stderr.write('warning: consumed %d of %d payload bytes\n' % (used, len(data)))
     devirt.apply_mutations(root, spec.mutation_rules())
     str_ops = set(spec.ops_named('DECSTR'))
-    imp_ops = spec.ops_named('DECIMPORT')
-    devirt.decrypt_strings(root, str_ops, imp_ops[0] if imp_ops else -1, spec.str_prefix)
+    imp_ops = set(spec.ops_named('DECIMPORT'))
+    devirt.decrypt_strings(root, str_ops, imp_ops, spec.str_prefix, spec.dec_offset)
     return spec, rep, norm, root, data
 
 

@@ -43,22 +43,27 @@ def _xor(data, key, prefix):
     return bytes(data[i] ^ key[i % len(key)] for i in range(len(data)))
 
 
-def decrypt_strings(proto, str_ops, import_op, prefix):
+def decrypt_strings(proto, str_ops, import_ops, prefix, offsets=None):
     """Run the decrypt pseudo-ops statically over the whole proto tree."""
+    offsets = offsets or {}
+    off_s = offsets.get('DECSTR', 0)
+    off_i = offsets.get('DECIMPORT', 1)
     code = proto['code']
     n = 0
     for i, ins in enumerate(code):
         if not ins:
             continue
         if ins['op'] in str_ops:
-            tgt = code[i + 1] if i + 1 < len(code) else None
+            j = i + 1 + off_s
+            tgt = code[j] if j < len(code) else None
             key = ins.get('K')
             if tgt and isinstance(tgt.get('K'), bytes) and isinstance(key, bytes):
                 tgt['K'] = _xor(tgt['K'], key, prefix)
                 ins['meta'] = 'decrypts +1'
                 n += 1
-        elif ins['op'] == import_op:
-            tgt = code[i + 2] if i + 2 < len(code) else None
+        elif ins['op'] in import_ops:
+            j = i + 1 + off_i
+            tgt = code[j] if j < len(code) else None
             if not tgt:
                 continue
             cnt = ins.get('KN', 1)
@@ -69,5 +74,5 @@ def decrypt_strings(proto, str_ops, import_op, prefix):
             ins['meta'] = 'decrypts import +2'
             n += 1
     for c in proto['protos']:
-        n += decrypt_strings(c, str_ops, import_op, prefix)
+        n += decrypt_strings(c, str_ops, import_ops, prefix, offsets)
     return n

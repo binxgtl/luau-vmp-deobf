@@ -1,11 +1,13 @@
 """Stage 2 - undo the control-flow flattening.
 
-The protector compiles each of its own functions into
+The protector compiles each of its own functions into a dispatch loop, in one of
+two shapes depending on the build:
 
-    state = <entry>
-    while state ~= <exit> do
-        if state >= A then ... elseif state < B then ... end   -- binary search
-    end
+    state = <entry>                     state = <entry>
+    while state ~= <exit> do            repeat
+        if state >= A then ...              if state >= A then ...
+        elseif state < B then ... end       elseif state < B then ... end
+    end                                 until state == <exit>
 
 Every leaf assigns the next state.  We parse the binary-search tree, recover the
 value range that reaches each leaf, then walk the resulting state graph from the
@@ -17,6 +19,10 @@ import re
 from .lualex import tokenize, render, Tok
 
 CMP = {'<', '>', '<=', '>=', '==', '~='}
+
+ASSIGN_RE = re.compile(r"([\w\[\]_.,()\-+ ]+?)=([^;]+)")
+_WHILE_LOOP = re.compile(r"(\w+)\s*=\s*(-?\d+)\s*while\s+(\w+)\s*~=\s*(-?\d+)\s*do")
+_REPEAT_LOOP = re.compile(r"(\w+)\s*=\s*(-?\d+)\s*repeat\b")
 
 
 # --------------------------------------------------------------------------- parse
@@ -126,15 +132,19 @@ def _parse_if(toks, i, cons, out, state):
 
 
 def deflatten(src, offset, state):
-    """Parse `while state ~= X do ... end` at `offset`; return interval->code chunks."""
+    """Parse a dispatch loop of either shape; return interval -> code chunks."""
     toks = tokenize(src[offset:])
-    if toks[0].val != 'while':
-        raise ValueError('expected a while loop at offset %d' % offset)
-    j = 0
-    while toks[j].val != 'do':
-        j += 1
+    if toks[0].val == 'while':
+        j = 0
+        while toks[j].val != 'do':
+            j += 1
+        start = j + 1
+    elif toks[0].val == 'repeat':
+        start = 1
+    else:
+        raise ValueError('expected a dispatch loop at offset %d' % offset)
     out = []
-    _parse_block(toks, j + 1, (-10 ** 9, 10 ** 9), out, state)
+    _parse_block(toks, start, (-10 ** 9, 10 ** 9), out, state)
     return out
 
 
@@ -166,11 +176,29 @@ def _split_top(s):
     return parts
 
 
+def assignments(text):
+    """Yield (lhs, rhs) pairs, expanding Lua tuple assignments."""
+    for line in text.split('\n'):
+        for m in ASSIGN_RE.finditer(line):
+            head = m.group(1).strip()
+            if head.endswith(('=', '<', '>', '~')) or m.group(2).startswith('='):
+                continue
+            lhs = _split_top(head)
+            rhs = _split_top(m.group(2))
+            if len(lhs) != len(rhs):
+                yield head, m.group(2).strip()
+                continue
+            for a, b in zip(lhs, rhs):
+                yield a.strip(), b.strip()
+
+
+_SUCC_RE = re.compile(r"([\w\[\]_.,]+)=([^;\n]+)")
+
+
 def successors(lines, state):
     """Every integer literal assigned to the state variable inside a block."""
-    blob = '\n'.join(lines)
     out = []
-    for m in re.finditer(r"([\w\[\]_.,]+)=([^;\n]+)", blob):
+    for m in _SUCC_RE.finditer('\n'.join(lines)):
         lhs = m.group(1).split(',')
         rhs = _split_top(m.group(2))
         for a, b in zip(lhs, rhs):
@@ -199,7 +227,7 @@ def _render(lines):
 
 
 class Linear:
-    """A deflattened function: state value -> list of source lines."""
+    """A deflattened function: state value -> list of rendered source lines."""
 
     def __init__(self, chunks, state, entry):
         self.state = state
@@ -237,41 +265,24 @@ class Linear:
         out = []
         for v, lines in self.blocks.items():
             out.append('::L%d::' % v)
-            out.extend('  ' + l for l in _render(lines))
+            out.extend('  ' + l for l in lines)
             out.append('')
         return '\n'.join(out)
 
 
-def find_loops(src):
-    """Yield (offset, state_var, entry_state, exit_state) for each dispatch loop."""
-    for m in re.finditer(r"(\w+)\s*=\s*(-?\d+)\s*while\s+\1\s*~=\s*(-?\d+)\s*do", src):
-        yield m.start(m.re.groups - 2 + 1) if False else m.start(), m.group(1), int(m.group(2)), int(m.group(3))
-
-
 def loop_offsets(src):
-    """Locate dispatch loops; returns list of dicts with offset/state/entry/exit."""
+    """Locate dispatch loops of either shape; returns offset/state/entry/exit dicts."""
     res = []
-    for m in re.finditer(r"(\w+)\s*=\s*(-?\d+)\s*while\s+\1\s*~=\s*(-?\d+)\s*do", src):
-        res.append({
-            'offset': src.index('while', m.start()),
-            'state': m.group(1),
-            'entry': int(m.group(2)),
-            'exit': int(m.group(3)),
-        })
+    for m in _WHILE_LOOP.finditer(src):
+        if m.group(1) != m.group(3):
+            continue
+        res.append({'offset': src.index('while', m.start()), 'state': m.group(1),
+                    'entry': int(m.group(2)), 'exit': int(m.group(4))})
+    for m in _REPEAT_LOOP.finditer(src):
+        state, entry = m.group(1), int(m.group(2))
+        off = src.index('repeat', m.start())
+        u = re.search(r"until\s+" + re.escape(state) + r"\s*==\s*(-?\d+)", src[off:])
+        res.append({'offset': off, 'state': state, 'entry': entry,
+                    'exit': int(u.group(1)) if u else None})
+    res.sort(key=lambda d: d['offset'])
     return res
-
-
-def assignments(text):
-    """Yield (lhs, rhs) pairs, expanding Lua tuple assignments."""
-    for line in text.split('\n'):
-        for m in re.finditer(r"([\w\[\]_.,()\-+ ]+?)=([^;]+)", line):
-            head = m.group(1).strip()
-            if head.endswith(('=', '<', '>', '~')) or m.group(2).startswith('='):
-                continue
-            lhs = _split_top(head)
-            rhs = _split_top(m.group(2))
-            if len(lhs) != len(rhs):
-                yield head, m.group(2).strip()
-                continue
-            for a, b in zip(lhs, rhs):
-                yield a.strip(), b.strip()

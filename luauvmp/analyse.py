@@ -8,6 +8,7 @@ producing wrong output.
 import re
 
 from . import prelude, deflatten, mutations, signatures as sigdb
+from .fingerprint import Normaliser, handler_signature
 from .spec import Spec
 
 
@@ -107,6 +108,11 @@ def dispatch_ranges(lin, entry, var, lo=0, hi=255, follow_goto=True):
     return sorted((a, b, s) for (a, b), s in out.items())
 
 
+def u32(v):
+    """bit32 normalises operands mod 2^32, so negative literals are unsigned keys."""
+    return int(v) % (1 << 32)
+
+
 def _all_text(lin):
     return '\n'.join('\n'.join(v) for v in lin.blocks.values())
 
@@ -130,9 +136,9 @@ def analyse_reader(lin, src, spec, rep):
             if not m:
                 continue
             for _s, t in _succ_text(lin, v):
-                k = re.search(r"\w+\(\s*" + re.escape(m.group(1)) + r"\s*,\s*(\d+)\s*\)", t)
+                k = re.search(r"\w+\(\s*" + re.escape(m.group(1)) + r"\s*,\s*(-?\d+)\s*\)", t)
                 if k:
-                    keys.append(int(k.group(1)))
+                    keys.append(u32(k.group(1)))
         return keys
     bk, wk = key_after('"B"'), key_after('"<I4"')
     spec.byte_key = _majority(bk, rep, 'byte_key')
@@ -142,13 +148,11 @@ def analyse_reader(lin, src, spec, rep):
     accs = set(re.findall(r"(\w+)\s*=\s*\w+\(\s*\1\s*,\s*\w+\(\w+\(\w+,\s*127\s*\)", text))
     vk = []
     for acc in accs:
-        for m in re.finditer(r"\w+\(\s*" + re.escape(acc) + r"\s*,\s*(\d+)\s*\)", text):
-            if int(m.group(1)) > 255:
-                vk.append(int(m.group(1)))
-    for v, lines in lin.blocks.items():
-        for m in re.finditer(r"=\s*\w+\(\s*\w+\s*,\s*(\d+)\s*\)", '\n'.join(lines)):
-            pass
-    spec.varint_key = _majority(vk, rep, 'varint_key')
+        for m in re.finditer(r"\w+\(\s*" + re.escape(acc) + r"\s*,\s*(-?\d+)\s*\)", text):
+            v = u32(m.group(1))
+            if v > 255 and v != spec.byte_key and v != spec.word_key:
+                vk.append(v)
+    spec.varint_key = _majority(vk, rep, 'varint_key') if vk else 0
 
     # ---- instruction field slots
     f = {}
@@ -211,10 +215,14 @@ def analyse_reader(lin, src, spec, rep):
         rep.unknown.append('constant type codes')
 
     # ---- kmode codes
-    kmap = _kmode_codes(lin, spec_fields)
+    for name, code in _type_codes(lin, spec_fields).items():
+        setattr(spec, name, code)
+    kmap, kslots = _kmode_codes(lin, spec_fields)
     for name, code in kmap.items():
         setattr(spec, name, code)
-    rep.reader = {'fields': spec_fields, 'kmodes': kmap}
+    spec_fields.update(kslots)
+    rep.reader = {'fields': spec_fields, 'kmodes': kmap,
+                  'types': {'abc': spec.type_abc, 'ad': spec.type_ad, 'ae': spec.type_ae}}
     return spec_fields
 
 
@@ -279,23 +287,109 @@ def _reaches(lin, start, needle, depth=12):
     return False
 
 
+def _branch_text(lin, state, depth=16):
+    """Concatenated text of the sub-graph a dispatch arm leads into."""
+    out, seen, stack = [], set(), [(state, 0)]
+    while stack:
+        v, d = stack.pop(0)
+        if v in seen or d > depth or v not in lin.blocks:
+            continue
+        seen.add(v)
+        out.append(lin.text(v))
+        for n in deflatten.successors(lin.blocks[v], lin.state):
+            stack.append((n, d + 1))
+    return '\n'.join(out)
+
+
 def _classify_consts(lin, entry, var):
+    """Work out which constant type code means what, from what its arm reads.
+
+    Builds differ in how many types they emit: the reference build has four
+    (nil / int / string / double), others add boolean and empty-table.
+    """
     out = {}
     for lo, hi, state in dispatch_ranges(lin, entry, var, 0, 15):
         if lo != hi:
             continue
-        if _reaches(lin, state, '"<d"', 6):
+        head = lin.text(state).replace(' ', '')
+        body = _branch_text(lin, state).replace(' ', '')
+        if '"<d"' in body:
             out[lo] = 'double'
-        elif _reaches(lin, state, '"c"..', 16):
+        elif '"c"..' in body:
             out[lo] = 'string'
-        elif _reaches(lin, state, ',127)', 16):
+        elif re.search(r"[=,]\w+~=0\b", body) and '"B"' in body:
+            out[lo] = 'boolean'
+        elif ',127)' in body:
             out[lo] = 'int'
-    # the branch that does nothing at all is the nil constant
-    known = set(out)
-    for lo, hi, state in dispatch_ranges(lin, entry, var, 0, 15):
-        if lo == hi and lo not in known and len(lin.blocks.get(state, [])) <= 2:
+        elif re.search(r"[=,]\{\}", head):
+            out[lo] = 'table'
+        elif re.search(r"[=,]nil\b", head) and len(lin.blocks.get(state, [])) <= 2:
             out[lo] = 'nil'
     return out
+
+
+def _type_codes(lin, fields):
+    """Which info-table `type` value selects which operand layout (ABC / AD / AE)."""
+    text = _all_text(lin)
+    info = re.search(r"(\w+),(\w+),(\w+)=(\w+)\[1\],(\w+)\[2\],(\w+)\[3\]", text)
+    if not info:
+        return {}
+    tvar = info.group(1)
+    entry = None
+    for v, lines in lin.blocks.items():
+        if re.search(r"if\s*\(?\s*" + re.escape(tvar) + r"\s*==", '\n'.join(lines)):
+            entry = v
+            break
+    if entry is None:
+        return {}
+    want = {fields.get('A'), fields.get('B'), fields.get('C')}
+    out = {}
+    for lo, hi, state in dispatch_ranges(lin, entry, tvar, 0, 15):
+        if lo != hi:
+            continue
+        body = _branch_text(lin, state, 3).replace(' ', '')
+        slots = {int(x) for x in re.findall(r"\[(\d+)\]=\w+\(\w+\(\w+,\d+\),\d+\)", body)}
+        if ',16777215)' in body:
+            out['type_ae'] = lo
+        elif ',65535)' in body:
+            out['type_ad'] = lo
+        elif len(slots & want) >= 2:
+            out['type_abc'] = lo
+    return out
+
+
+def _const_slots(lin, entry, var, fields):
+    """Slots the constant-patch pass writes: K, KC and the import extras."""
+    slots = {}
+    counts = {}
+    branches = 0
+    for lo, hi, state in dispatch_ranges(lin, entry, var, 0, 15):
+        if lo != hi:
+            continue
+        branches += 1
+        txt = lin.text(state).replace(' ', '')
+        imp = ',30)' in txt
+        ks = []
+        for lhs, rhs in deflatten.assignments(txt):
+            m = re.fullmatch(r"\w+\[(\d+)\]", lhs)
+            if not m:
+                continue
+            slot = int(m.group(1))
+            if slot in fields.values():
+                continue
+            counts[slot] = counts.get(slot, 0) + 1
+            if re.fullmatch(r"\w+\(\w+\[\d+\],31,1\)==1", rhs):
+                slots.setdefault('KC', slot)
+            elif imp and re.fullmatch(r"\w+\(\w+\[\d+\],30\)", rhs):
+                slots.setdefault('KN', slot)
+            elif re.search(r"\[\w+.*\+1\]$", rhs):
+                ks.append(slot)
+        if imp:
+            for n, slot in zip(('K', 'K1', 'K2'), ks):
+                slots.setdefault(n, slot)
+    if 'K' not in slots and counts:
+        slots['K'] = max(counts, key=counts.get)
+    return slots
 
 
 def _kmode_codes(lin, fields):
@@ -314,7 +408,7 @@ def _kmode_codes(lin, fields):
         if entry is not None:
             break
     if entry is None:
-        return {}
+        return {}, {}
     out = {}
     for lo, hi, state in dispatch_ranges(lin, entry, var, 0, 15):
         if lo != hi:
@@ -342,17 +436,39 @@ def _kmode_codes(lin, fields):
                 if nm in ('A', 'B', 'C', 'D', 'E', 'aux'):
                     out['kmode_' + nm] = lo
                 break
-    return out
+    return out, _const_slots(lin, entry, var, fields)
 
 
 # --------------------------------------------------------------------------- vm
 def vm_roles(lin):
+    """Identify the interpreter's own locals: code array, pc, current insn, opcode.
+
+    The fetch block is the one that does `insn = code[pc]` and, in the same block,
+    reads a fixed slot out of `insn`.  Tuple assignment order varies per build, so
+    both statements are matched through the assignment splitter rather than by a
+    single fixed-shape regex.
+    """
     roles = {}
     text = _all_text(lin)
-    m = re.search(r"(\w+)\s*=\s*(\w+)\[(\w+)\]\s*;\s*(\w+)\s*,\s*\w+\s*=\s*\1\[(\d+)\]", text)
-    if m:
-        roles.update(INSN=m.group(1), CODE=m.group(2), PC=m.group(3),
-                     OPC=m.group(4), OPFIELD=int(m.group(5)))
+    best = None
+    for state, lines in lin.blocks.items():
+        pairs = list(deflatten.assignments('\n'.join(lines)))
+        fetched = {}
+        for lhs, rhs in pairs:
+            m = re.fullmatch(r"(\w+)\[(\w+)\]", rhs)
+            if m and not m.group(2).isdigit():
+                fetched[lhs] = (m.group(1), m.group(2))
+        for lhs, rhs in pairs:
+            m = re.fullmatch(r"(\w+)\[(\d+)\]", rhs)
+            if m and m.group(1) in fetched:
+                code, pc = fetched[m.group(1)]
+                cand = dict(INSN=m.group(1), CODE=code, PC=pc, OPC=lhs,
+                            OPFIELD=int(m.group(2)), FETCH=state)
+                # the real fetch block is the one the dispatch tree hangs off
+                if best is None or text.count(cand['INSN'] + '[') > text.count(best['INSN'] + '['):
+                    best = cand
+    if best:
+        roles.update(best)
     insn = roles.get('INSN')
     if insn:
         c = {}
@@ -368,83 +484,6 @@ def vm_roles(lin):
     return roles
 
 
-class Normaliser:
-    """Rewrite a handler into a build-independent canonical form."""
-
-    def __init__(self, fields, roles, state):
-        self.state = state
-        self.roles = roles
-        self.slot2name = {v: k for k, v in fields.items()}
-
-    def reset(self):
-        self.locals = {}
-        self.fieldseq = []
-        self.xors = []
-        self.states = {}
-
-    def canon(self, v):
-        self.states.setdefault(v, len(self.states))
-        return self.states[v]
-
-    def line(self, txt):
-        r, insn = self.roles, self.roles.get('INSN')
-
-        def fld(m):
-            nm = self.slot2name.get(int(m.group(1)), 'f%s' % m.group(1))
-            if nm not in self.fieldseq:
-                self.fieldseq.append(nm)
-            return 'I<%d>' % self.fieldseq.index(nm)
-        if insn:
-            txt = re.sub(re.escape(insn) + r"\[(\d+)\]", fld, txt)
-        for role in ('CODE', 'PC', 'REG', 'UPV', 'OPC'):
-            if r.get(role):
-                txt = re.sub(r"\b" + re.escape(r[role]) + r"\b", role, txt)
-        txt = re.sub(re.escape(self.state) + r"\s*=\s*(-?\d+)",
-                     lambda m: 'GOTO @%d' % self.canon(int(m.group(1))), txt)
-
-        def xr(m):
-            self.xors.append((m.group(1), int(m.group(2))))
-            return 'XOR(%s,#)' % m.group(1)
-        txt = re.sub(r"\w+\(\s*(I<\d+>|[A-Za-z_]\w*)\s*,\s*(\d+)\s*\)", xr, txt)
-
-        def loc(m):
-            n = m.group(0)
-            if n in ('GOTO', 'XOR', 'IFEXP', 'L', 'I', 'CODE', 'PC', 'REG', 'UPV', 'OPC') \
-                    or n in KEYWORDS_LUA:
-                return n
-            self.locals.setdefault(n, 't%d' % len(self.locals))
-            return self.locals[n]
-        txt = re.sub(r"\b[A-Za-z_]\w*\b", loc, txt)
-        return re.sub(r"\s+", '', txt)
-
-
-KEYWORDS_LUA = {'true', 'false', 'nil', 'and', 'or', 'not', 'if', 'then', 'else',
-                'end', 'return', 'continue', 'local', 'while', 'for', 'do', 'until',
-                'repeat', 'break', 'in', 'function'}
-
-
-def handler_signature(lin, entry, norm, stop):
-    norm.reset()
-    order, seen, queue = [], set(), [entry]
-    while queue:
-        v = queue.pop(0)
-        if v in seen or v in stop or v not in lin.blocks:
-            continue
-        seen.add(v)
-        order.append(v)
-        for s in deflatten.successors(lin.blocks[v], lin.state):
-            if s not in seen and s not in stop:
-                queue.append(s)
-    for v in order:
-        norm.canon(v)
-    lines = []
-    for v in order:
-        lines.append('@%d:' % norm.canon(v))
-        for l in lin.blocks[v]:
-            lines.append(norm.line(l))
-    return '\n'.join(lines), list(norm.fieldseq), list(norm.xors)
-
-
 def analyse_vm(lin, spec, fields, rep):
     roles = vm_roles(lin)
     rep.vm = {'roles': roles}
@@ -452,12 +491,7 @@ def analyse_vm(lin, spec, fields, rep):
         rep.unknown.append('VM dispatch roles')
         return
     # the fetch block jumps into the dispatch tree
-    fetch = None
-    for v, lines in lin.blocks.items():
-        if re.search(re.escape(roles['OPC']) + r"\s*,?\s*\w*\s*=\s*" +
-                     re.escape(roles['INSN']) + r"\[\d+\]", '\n'.join(lines)):
-            fetch = v
-            break
+    fetch = roles.get('FETCH')
     entry = None
     if fetch is not None:
         succ = deflatten.successors(lin.blocks[fetch], lin.state)
@@ -466,7 +500,14 @@ def analyse_vm(lin, spec, fields, rep):
     if entry is None:
         rep.unknown.append('opcode dispatch entry')
         return
+    # Stop a handler walk at the shared dispatch plumbing: the loop top (any block
+    # that falls into the fetch), the fetch itself and the dispatch tree root.
+    # Without this the signature absorbs build-specific tail code and stops
+    # matching across builds.
     stop = {lin.entry, fetch, entry}
+    for v, lines in lin.blocks.items():
+        if fetch in deflatten.successors(lines, lin.state):
+            stop.add(v)
     ranges = dispatch_ranges(lin, entry, roles['OPC'])
     # narrower ranges win where an equality test left a wide fall-through
     ranges = sorted(ranges, key=lambda r: -(r[1] - r[0]))
@@ -478,13 +519,15 @@ def analyse_vm(lin, spec, fields, rep):
             rep.handlers[op] = (state, sig, fseq, xors)
             if name:
                 spec.ops[op] = name
+        if name in ('DECSTR', 'DECIMPORT'):
+            spec.dec_offset[name] = 1 if 'CODE[PC+1]' in sig else 0
         if name:
+            spec.roles.setdefault(name, fseq)
             masks = {}
             for fname, val in xors:
-                if fname.startswith('I<'):
-                    idx = int(fname[2:-1])
-                    if idx < len(fseq):
-                        masks[fseq[idx]] = val
+                m = re.fullmatch(r"\$(\d+)\$", fname)
+                if m and int(m.group(1)) < len(fseq):
+                    masks[fseq[int(m.group(1))]] = val
             if masks:
                 spec.masks.setdefault(name, {})['xor'] = masks
     rep.vm['ranges'] = ranges

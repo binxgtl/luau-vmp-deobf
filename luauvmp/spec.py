@@ -53,8 +53,12 @@ class Spec:
         self.ops = {}
         # canonical name -> {'xor': {field: mask}} for handlers with baked masks
         self.masks = {}
+        # canonical name -> [field, ...] in canonical operand order
+        self.roles = {}
         # runtime instruction mutation: "op,C" -> [new_op, xor_A, xor_B]
         self.mutations = {}
+        # DECSTR / DECIMPORT: how far ahead the patched instruction sits
+        self.dec_offset = {}
         # per-string XOR key prefix
         self.str_prefix = b''
         self.__dict__.update(kw)

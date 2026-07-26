@@ -18,9 +18,9 @@
  "kmode_C": 10,
  "const_types": {
   "0": "string",
+  "1": "nil",
   "2": "int",
-  "6": "double",
-  "1": "nil"
+  "6": "double"
  },
  "opinfo": [],
  "ops": {
@@ -332,6 +332,247 @@
    }
   }
  },
+ "roles": {
+  "ADD": [
+   "C",
+   "A",
+   "B"
+  ],
+  "JUMPIFNOTEQ": [
+   "A",
+   "aux",
+   "D"
+  ],
+  "FORGLOOP": [
+   "A",
+   "K",
+   "D"
+  ],
+  "SETUPVAL": [
+   "B",
+   "A"
+  ],
+  "GETTABLE": [
+   "B",
+   "A",
+   "C"
+  ],
+  "SUB": [
+   "A",
+   "C",
+   "B"
+  ],
+  "ADDK": [
+   "C",
+   "A",
+   "K"
+  ],
+  "NAMECALL": [
+   "C",
+   "B",
+   "K"
+  ],
+  "GETIMPORT": [
+   "f6617",
+   "K",
+   "A",
+   "f11175",
+   "f8277"
+  ],
+  "LOADB": [
+   "C",
+   "A",
+   "B"
+  ],
+  "ORK": [
+   "A",
+   "B",
+   "K"
+  ],
+  "NOP": [],
+  "RETURN": [
+   "C",
+   "A",
+   "B"
+  ],
+  "NEWCLOSURE2": [
+   "Du",
+   "A"
+  ],
+  "FORGPREP_F": [
+   "A",
+   "D"
+  ],
+  "JUMPXEQKB": [
+   "K",
+   "KC",
+   "A",
+   "D"
+  ],
+  "GETTABLEKS": [
+   "K",
+   "A",
+   "C"
+  ],
+  "MODK": [
+   "A",
+   "C",
+   "K"
+  ],
+  "JUMPXEQKS": [
+   "K",
+   "KC",
+   "A",
+   "D"
+  ],
+  "LOADNIL": [
+   "C",
+   "A",
+   "B"
+  ],
+  "MOVE": [
+   "C",
+   "A",
+   "B"
+  ],
+  "DECSTR": [
+   "K",
+   "op"
+  ],
+  "JUMPIFNOTLE": [
+   "A",
+   "aux",
+   "D"
+  ],
+  "FORNPREP": [
+   "A",
+   "D"
+  ],
+  "CLOSEUPVALS": [
+   "A"
+  ],
+  "JUMPIFNOT": [
+   "A",
+   "D"
+  ],
+  "JUMP": [
+   "D"
+  ],
+  "SETTABLE": [
+   "C",
+   "A",
+   "B"
+  ],
+  "LEN": [
+   "A",
+   "B"
+  ],
+  "JUMPIF": [
+   "A",
+   "D"
+  ],
+  "JUMPIFLE": [
+   "A",
+   "aux",
+   "D"
+  ],
+  "JUMPXEQKNIL": [
+   "KC",
+   "A",
+   "D"
+  ],
+  "SETTABLEKS": [
+   "K",
+   "A",
+   "B"
+  ],
+  "CALL": [
+   "C",
+   "B",
+   "A"
+  ],
+  "SETTABLEN": [
+   "C",
+   "B",
+   "A"
+  ],
+  "GETTABLEN": [
+   "C",
+   "A",
+   "B"
+  ],
+  "LOADK": [
+   "A",
+   "K"
+  ],
+  "LOADN": [
+   "Du",
+   "A"
+  ],
+  "MULK": [
+   "C",
+   "B",
+   "K"
+  ],
+  "FORNLOOP": [
+   "A",
+   "D"
+  ],
+  "NEWCLOSURE": [
+   "K",
+   "A"
+  ],
+  "JUMPIFEQ": [
+   "A",
+   "aux",
+   "D"
+  ],
+  "CONCAT": [
+   "A",
+   "B",
+   "C"
+  ],
+  "DIVK": [
+   "B",
+   "A",
+   "K"
+  ],
+  "GETVARARGS": [
+   "C",
+   "A",
+   "B"
+  ],
+  "GETUPVAL": [
+   "C",
+   "A",
+   "B"
+  ],
+  "NEWTABLE": [
+   "A",
+   "aux"
+  ],
+  "DECIMPORT": [
+   "f6617",
+   "K",
+   "op",
+   "f11175",
+   "f8277"
+  ],
+  "JUMPIFNOTLT": [
+   "A",
+   "aux",
+   "D"
+  ],
+  "SETLIST": [
+   "C",
+   "A",
+   "B"
+  ],
+  "FORGPREP": [
+   "A",
+   "D"
+  ]
+ },
  "mutations": {
   "115,70": [
    113,
@@ -538,6 +779,10 @@
    234,
    35
   ]
+ },
+ "dec_offset": {
+  "DECSTR": 0,
+  "DECIMPORT": 1
  },
  "str_prefix": [
   20,
