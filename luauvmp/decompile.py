@@ -12,10 +12,13 @@ KEYWORDS = {'and', 'or', 'not', 'if', 'then', 'else', 'end', 'do', 'while', 'for
             'until', 'break'}
 
 COND = {'JUMPIF', 'JUMPIFNOT', 'JUMPIFEQ', 'JUMPIFNOTEQ', 'JUMPIFLE', 'JUMPIFNOTLE',
-        'JUMPIFNOTLT', 'JUMPXEQKNIL', 'JUMPXEQKB', 'JUMPXEQKS'}
+        'JUMPIFLT', 'JUMPIFNOTLT', 'JUMPXEQKNIL', 'JUMPXEQKB', 'JUMPXEQKS'}
+INLINE_CLOSURE_LINES = 8
+
 PURE = {'MOVE', 'LOADNIL', 'LOADN', 'LOADK', 'GETIMPORT', 'GETTABLE', 'GETTABLEKS',
         'GETTABLEN', 'NAMECALL', 'GETUPVAL', 'ADD', 'SUB', 'MULK', 'DIVK', 'MODK',
-        'ADDK', 'ORK', 'CONCAT', 'LEN', 'NOP', 'DECSTR', 'DECIMPORT',
+        'ADDK', 'SUBK', 'ORK', 'ANDK', 'MUL', 'DIV', 'MOD', 'AND', 'OR', 'NOT',
+        'MINUS', 'CONCAT', 'LEN', 'NOP', 'DECSTR', 'DECIMPORT',
         'NEWCLOSURE', 'NEWCLOSURE2'}
 
 
@@ -133,9 +136,22 @@ class Dec:
     def nm(self, ins):
         return self.spec.name(ins['op']) or 'OP%d' % ins['op']
 
+    def f(self, ins, name, default=0):
+        """Read an instruction field by its *reference* name.
+
+        Builds shuffle which slot plays which role, so every access goes through
+        the per-opcode translation recovered by the fingerprinter."""
+        real = self.spec.fieldmap.get(ins['op'], {}).get(name, name)
+        return ins.get(real, default)
+
+    def has(self, ins, name):
+        real = self.spec.fieldmap.get(ins['op'], {}).get(name, name)
+        return real in ins
+
     def mask(self, ins, field):
-        m = self.spec.masks.get(self.nm(ins), {}).get('xor', {})
-        return ins.get(field, 0) ^ m.get(field, 0)
+        real = self.spec.fieldmap.get(ins['op'], {}).get(field, field)
+        m = self.spec.masks.get(ins['op'], {}).get('xor', {})
+        return ins.get(real, 0) ^ m.get(real, 0)
 
     def ins(self, i):
         return self.code[i - 1] if 1 <= i <= len(self.code) else None
@@ -167,7 +183,7 @@ class Dec:
         return 'v%d' % self.tmp[0]
 
     def tgt(self, i):
-        return i + 1 + self.ins(i)['D']
+        return i + 1 + self.f(self.ins(i), 'D')
 
     def _scan_loops(self):
         for i in range(1, len(self.code) + 1):
@@ -184,7 +200,7 @@ class Dec:
     def cond1(self, i):
         ins = self.ins(i)
         n = self.nm(ins)
-        A, aux = ins.get('A', 0), ins.get('aux', 0)
+        A, aux = self.f(ins, 'A'), self.f(ins, 'aux')
         if n == 'JUMPIF':
             c = self.r(A)
         elif n == 'JUMPIFNOT':
@@ -195,14 +211,17 @@ class Dec:
             c = '%s ~= %s' % (self.r(A), self.r(aux))
         elif n == 'JUMPIFLE':
             c = '%s <= %s' % (self.r(A), self.r(aux))
+        elif n == 'JUMPIFLT':
+            c = '%s < %s' % (self.r(A), self.r(aux))
         elif n == 'JUMPIFNOTLE':
             c = '%s > %s' % (self.r(A), self.r(aux))
         elif n == 'JUMPIFNOTLT':
             c = '%s >= %s' % (self.r(A), self.r(aux))
         elif n == 'JUMPXEQKNIL':
-            c = ('%s ~= nil' if ins.get('KC') else '%s == nil') % self.r(A)
+            c = ('%s ~= nil' if self.f(ins, 'KC') else '%s == nil') % self.r(A)
         elif n in ('JUMPXEQKB', 'JUMPXEQKS'):
-            c = ('%s ~= %s' if ins.get('KC') else '%s == %s') % (self.r(A), S(ins.get('K')))
+            c = ('%s ~= %s' if self.f(ins, 'KC') else '%s == %s') % (
+                self.r(A), S(self.f(ins, 'K', None)))
         else:
             c = '<%s?>' % n
         return c, self.tgt(i)
@@ -389,7 +408,7 @@ class Dec:
 
     def numeric_for(self, i, ind):
         ins = self.ins(i)
-        A, t = ins['A'], self.tgt(i)
+        A, t = self.f(ins, 'A'), self.tgt(i)
         var = 'i%d' % A
         limit, step, init = self.r(A), self.r(A + 1), self.r(A + 2)
         self.reg[A + 2] = var
@@ -403,11 +422,12 @@ class Dec:
 
     def generic_for(self, i, ind):
         ins = self.ins(i)
-        A, t = ins['A'], self.tgt(i)
+        A, t = self.f(ins, 'A'), self.tgt(i)
         loopins = self.ins(t)
         n = 2
-        if loopins and isinstance(loopins.get('K'), (int, float)):
-            n = max(1, int(loopins['K']))
+        kk = self.f(loopins, 'K', None) if loopins else None
+        if isinstance(kk, (int, float)):
+            n = max(1, int(kk))
         names = ['%s%d' % (b, A) for b in ['k', 'v', 'w', 'x'][:n]]
         for j, name in enumerate(names):
             self.reg[A + 3 + j] = name
@@ -424,8 +444,8 @@ class Dec:
     def simple(self, i, ind):
         ins = self.ins(i)
         name = self.nm(ins)
-        A, B, C = ins.get('A', 0), ins.get('B', 0), ins.get('C', 0)
-        aux, K = ins.get('aux', 0), ins.get('K')
+        A, B, C = self.f(ins, 'A'), self.f(ins, 'B'), self.f(ins, 'C')
+        aux, K = self.f(ins, 'aux'), self.f(ins, 'K', None)
 
         if name == 'MOVE':
             self.setr(A, self.r(B))
@@ -441,12 +461,14 @@ class Dec:
         elif name == 'LOADK':
             self.setr(A, S(K))
         elif name == 'GETIMPORT':
-            n = ins.get('KN', 1)
+            n = self.f(ins, 'KN', 1)
             path = kplain(K)
             if n >= 2:
-                path += '.' + (kname(ins['K1']) or '[%s]' % S(ins['K1']))
+                k1 = self.f(ins, 'K1', None)
+                path += '.' + (kname(k1) or '[%s]' % S(k1))
             if n == 3:
-                path += '.' + (kname(ins['K2']) or '[%s]' % S(ins['K2']))
+                k2 = self.f(ins, 'K2', None)
+                path += '.' + (kname(k2) or '[%s]' % S(k2))
             self.setr(A, path)
             return i + 2
         elif name == 'GETTABLE':
@@ -510,8 +532,26 @@ class Dec:
             self.setr(A, '(%s %% %s)' % (self.r(C), S(K)))
         elif name == 'ADDK':
             self.setr(C, '(%s + %s)' % (self.r(A), S(K)))
+        elif name == 'SUBK':
+            self.setr(A, '(%s - %s)' % (self.r(C), S(K)))
+        elif name == 'MUL':
+            self.setr(A, '(%s * %s)' % (self.r(B), self.r(C)))
+        elif name == 'DIV':
+            self.setr(B, '(%s / %s)' % (self.r(C), self.r(A)))
+        elif name == 'MOD':
+            self.setr(A, '(%s %% %s)' % (self.r(B), self.r(C)))
         elif name == 'ORK':
             self.setr(B, '(%s or %s)' % (self.r(A), S(K)))
+        elif name == 'ANDK':
+            self.setr(B, '(%s and %s)' % (self.r(A), S(K)))
+        elif name == 'OR':
+            self.setr(B, '(%s or %s)' % (self.r(C), self.r(A)))
+        elif name == 'AND':
+            self.setr(B, '(%s and %s)' % (self.r(C), self.r(A)))
+        elif name == 'NOT':
+            self.setr(A, 'not %s' % self.r(B))
+        elif name == 'MINUS':
+            self.setr(A, '-%s' % self.r(B))
         elif name == 'CONCAT':
             self.setr(C, '(' + ' .. '.join(self.r(x) for x in range(A, B + 1)) + ')')
         elif name == 'LEN':
@@ -567,7 +607,7 @@ class Dec:
     def closure(self, i, ind):
         ins = self.ins(i)
         if self.nm(ins) == 'NEWCLOSURE':
-            pidx, dst = int(ins['K']), ins['A']
+            pidx, dst = int(self.f(ins, 'K')), self.f(ins, 'A')
         else:
             d = self.mask(ins, 'Du')
             pidx = d - 65536 if d >= 32768 else d
@@ -594,8 +634,15 @@ class Dec:
         d = Dec(sub, self.spec, upnames=caps, boxctr=self.boxes, tmpctr=self.tmp)
         body = d.run()
         params = ', '.join(d.argnames) if sub.numparams else '...'
-        self.setr(dst, '\n'.join(['function(%s)' % params] +
-                                 ['    ' + l for l in body] + ['end']))
+        text = '\n'.join(['function(%s)' % params] + ['    ' + l for l in body] + ['end'])
+        # A closure expression is duplicated every time its register is read, which
+        # explodes on deeply nested scripts.  Anything sizeable becomes a local.
+        if len(body) > INLINE_CLOSURE_LINES:
+            nm = self.newtmp()
+            self.emit(ind, 'local %s = %s' % (nm, text))
+            self.setr(dst, nm)
+        else:
+            self.setr(dst, text)
         return j
 
     # ---------------------------------------------------------------- calls

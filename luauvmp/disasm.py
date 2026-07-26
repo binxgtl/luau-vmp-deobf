@@ -25,7 +25,7 @@ def dis_proto(p, spec, out, path='main'):
         op = ins['op']
         nm = spec.name(op) or 'OP%d' % op
         parts = []
-        masks = spec.masks.get(nm, {}).get('xor', {})
+        masks = spec.masks.get(op, {}).get('xor', {})
         if masks:
             dec = []
             for fld, mask in masks.items():

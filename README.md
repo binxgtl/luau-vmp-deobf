@@ -82,16 +82,17 @@ fields that need overriding.
 | Constant-mode codes (all ten) | `analyse._kmode_codes` |
 | Opcode numbering | `analyse.analyse_vm` — handler fingerprinting against `signatures.py` |
 | Per-handler XOR masks (CALL, LOADN, NEWCLOSURE) | fingerprint by-product |
+| Operand roles, when a build shuffles which slot is dest/src | signature field order, zipped against the reference build |
 | Self-modifying instruction rules | `mutations.extract` (path-sensitive) |
 | Lazy per-string / per-import decryption | `devirt.decrypt_strings` |
 | Heap-boxed upvalues | `decompile` (`bN --[[byref]]`) |
 
 ## Tested on
 
-| Sample | Loader | Bytecode | Protos | Opcodes | Result |
-|---|---|---|---|---|---|
-| build A | 101 KB | 35 KB (100% parsed) | 65 | 49 | ~1150 lines, every opcode identified |
-| build B | 240 KB | 193 KB (100% parsed) | 700+ | 54 | ~14 500 lines, 48/54 opcodes identified |
+| Sample | Loader | Bytecode | Protos | Result |
+|---|---|---|---|---|
+| build A | 101 KB | 35 KB (100% parsed) | 65 | 1 155 lines, every opcode identified |
+| build B | 240 KB | 193 KB (100% parsed) | 700+ | 7 800 lines, every opcode identified |
 
 The two builds share no keys, no opcode numbers, no field slots, no constant
 type codes and not even the same dispatch loop shape — everything was derived

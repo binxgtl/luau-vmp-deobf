@@ -12,8 +12,10 @@ CANONICAL_OPS = [
     'GETTABLE', 'SETTABLE', 'GETTABLEKS', 'SETTABLEKS', 'GETTABLEN', 'SETTABLEN',
     'NAMECALL', 'CALL', 'RETURN',
     'JUMP', 'JUMPIF', 'JUMPIFNOT', 'JUMPIFEQ', 'JUMPIFNOTEQ', 'JUMPIFLE',
-    'JUMPIFNOTLE', 'JUMPIFNOTLT', 'JUMPXEQKNIL', 'JUMPXEQKB', 'JUMPXEQKS',
-    'ADD', 'SUB', 'ADDK', 'MULK', 'DIVK', 'MODK', 'ORK', 'CONCAT', 'LEN',
+    'JUMPIFNOTLE', 'JUMPIFLT', 'JUMPIFNOTLT', 'JUMPXEQKNIL', 'JUMPXEQKB',
+    'JUMPXEQKS',
+    'ADD', 'SUB', 'MUL', 'DIV', 'MOD', 'ADDK', 'SUBK', 'MULK', 'DIVK', 'MODK',
+    'AND', 'OR', 'ANDK', 'ORK', 'NOT', 'MINUS', 'CONCAT', 'LEN',
     'NEWTABLE', 'SETLIST', 'GETUPVAL', 'SETUPVAL', 'CLOSEUPVALS',
     'NEWCLOSURE', 'NEWCLOSURE2', 'GETVARARGS',
     'FORNPREP', 'FORNLOOP', 'FORGPREP', 'FORGPREP_F', 'FORGLOOP',
@@ -51,10 +53,12 @@ class Spec:
         self.opinfo = []
         # opcode number -> canonical name
         self.ops = {}
-        # canonical name -> {'xor': {field: mask}} for handlers with baked masks
+        # opcode -> {'xor': {field: mask}} for handlers with baked operand masks
         self.masks = {}
         # canonical name -> [field, ...] in canonical operand order
         self.roles = {}
+        # opcode -> {reference field: this build's field}
+        self.fieldmap = {}
         # runtime instruction mutation: "op,C" -> [new_op, xor_A, xor_B]
         self.mutations = {}
         # DECSTR / DECIMPORT: how far ahead the patched instruction sits
@@ -84,6 +88,8 @@ class Spec:
         d = dict(self.__dict__)
         d['const_types'] = {str(k): v for k, v in self.const_types.items()}
         d['ops'] = {str(k): v for k, v in self.ops.items()}
+        d['fieldmap'] = {str(k): v for k, v in self.fieldmap.items()}
+        d['masks'] = {str(k): v for k, v in self.masks.items()}
         d['mutations'] = {('%d,%d' % k if isinstance(k, tuple) else k): list(v)
                           for k, v in self.mutations.items()}
         d['str_prefix'] = list(self.str_prefix)
@@ -94,6 +100,9 @@ class Spec:
         d = json.loads(text)
         d['const_types'] = {int(k): v for k, v in d.get('const_types', {}).items()}
         d['ops'] = {int(k): v for k, v in d.get('ops', {}).items()}
+        d['fieldmap'] = {int(k): v for k, v in d.get('fieldmap', {}).items()}
+        d['masks'] = {int(k) if str(k).lstrip('-').isdigit() else k: v
+                      for k, v in d.get('masks', {}).items()}
         d['str_prefix'] = bytes(d.get('str_prefix', []))
         return cls(**d)
 

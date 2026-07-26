@@ -38,14 +38,18 @@ LABELS = {
     'FN_AnimalHospital': {
         6: 'FORNPREP', 10: 'DIV', 12: 'GETIMPORT', 25: 'FORGLOOP', 28: 'MOVE',
         41: 'NEWCLOSURE2', 44: 'DECSTR', 63: 'JUMP', 90: 'CALL', 97: 'FORNLOOP',
-        137: 'FORGPREP', 140: 'CALL', 198: 'NEWTABLE', 211: 'RETURN',
-        228: 'NEWCLOSURE', 238: 'DECIMPORT', 240: 'CONCAT',
+        43: 'SETLIST', 47: 'ORK', 86: 'OR', 137: 'FORGPREP', 138: 'GETVARARGS',
+        140: 'CALL', 186: 'GETUPVAL', 198: 'NEWTABLE', 211: 'RETURN',
+        68: 'GETTABLEN', 148: 'CLOSEUPVALS', 209: 'SUBK',
+        218: 'JUMPIFLT', 228: 'NEWCLOSURE', 238: 'DECIMPORT', 240: 'CONCAT',
     },
 }
 
 
 def main():
-    sigs, conflicts = {}, []
+    sigs, fields, conflicts = {}, {}, []
+    # first operand order seen for each canonical name, per arity
+    by_name = {}
     for path in sys.argv[1:]:
         stem = os.path.splitext(os.path.basename(path))[0]
         labels = LABELS.get(stem)
@@ -64,6 +68,12 @@ def main():
                 continue
             if sig not in sigs:
                 added += 1
+                # A later build may implement a known operation with a differently
+                # shaped handler.  Reuse the operand order already recorded for
+                # that operation so the decompiler keeps one set of field names.
+                key = (name, len(fseq))
+                fields[sig] = by_name.get(key, fseq)
+                by_name.setdefault(key, fields[sig])
             sigs[sig] = name
         print('%-22s %3d handler slots, %2d new signatures' % (stem, len(rep.handlers), added))
     for c in conflicts:
@@ -74,8 +84,17 @@ def main():
            'canonical form: identifiers, field slots, state numbers, tuple order and XOR',
            'masks erased, so it stays stable when the protector reshuffles them.',
            '"""', '', 'SIGNATURES = {']
-    for sig, name in sorted(sigs.items(), key=lambda kv: (kv[1], kv[0])):
+    order = sorted(sigs.items(), key=lambda kv: (kv[1], kv[0]))
+    for sig, name in order:
         out.append('    %r:\n        %r,' % (sig, name))
+    out.append('}')
+    out.append('')
+    out.append("# Operand order as seen in the build a signature was first learned from.")
+    out.append("# Zipping it against another build's order translates that build's field")
+    out.append("# slots into the ones the decompiler expects.")
+    out.append('REFERENCE_FIELDS = {')
+    for sig, name in order:
+        out.append('    %r:\n        %r,' % (sig, fields.get(sig, [])))
     out.append('}')
     io.open(os.path.join(ROOT, 'luauvmp', 'signatures.py'), 'w',
             encoding='utf-8').write('\n'.join(out) + '\n')

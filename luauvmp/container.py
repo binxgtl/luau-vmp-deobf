@@ -166,15 +166,27 @@ def read_proto(r, spec):
 
 
 def resolve_constants(code, consts, spec):
-    """The reader folds constants straight into each instruction record."""
+    """The reader folds constants straight into each instruction record.
+
+    A constant mode that indexes by a field the instruction's layout never
+    decoded belongs to an opcode the compiler does not emit; skip it rather than
+    inventing a value.
+    """
+    def k(idx):
+        return consts[idx] if 0 <= idx < len(consts) else None
+
     for ins in code:
         if not ins:
             continue
         km, aux = ins['kmode'], ins['aux']
+        need = {spec.kmode_D: 'D', spec.kmode_E: 'E',
+                spec.kmode_B: 'B', spec.kmode_A: 'A', spec.kmode_C: 'C'}.get(km)
+        if need and need not in ins:
+            continue
         if km == spec.kmode_D:
-            ins['K'] = consts[ins['D']]
+            ins['K'] = k(ins['D'])
         elif km == spec.kmode_E:
-            ins['K'] = consts[ins['E']]
+            ins['K'] = k(ins['E'])
         elif km == spec.kmode_auxbool:
             ins['K'] = (aux & 1) == 1
             ins['KC'] = ((aux >> 31) & 1) == 1
@@ -183,22 +195,22 @@ def resolve_constants(code, consts, spec):
         elif km == spec.kmode_import:
             n = aux >> 30
             ins['KN'] = n
-            ins['K'] = consts[(aux >> 20) & 1023]
+            ins['K'] = k((aux >> 20) & 1023)
             if n >= 2:
-                ins['K1'] = consts[(aux >> 10) & 1023]
+                ins['K1'] = k((aux >> 10) & 1023)
             if n == 3:
-                ins['K2'] = consts[aux & 1023]
+                ins['K2'] = k(aux & 1023)
         elif km == spec.kmode_aux24:
-            ins['K'] = consts[aux & 0xFFFFFF]
+            ins['K'] = k(aux & 0xFFFFFF)
             ins['KC'] = ((aux >> 31) & 1) == 1
         elif km == spec.kmode_B:
-            ins['K'] = consts[ins['B']]
+            ins['K'] = k(ins['B'])
         elif km == spec.kmode_aux:
-            ins['K'] = consts[aux]
+            ins['K'] = k(aux)
         elif km == spec.kmode_A:
-            ins['K'] = consts[ins['A']]
+            ins['K'] = k(ins['A'])
         elif km == spec.kmode_C:
-            ins['K'] = consts[ins['C']]
+            ins['K'] = k(ins['C'])
 
 
 def parse(data, spec):

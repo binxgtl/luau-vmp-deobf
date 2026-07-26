@@ -10,7 +10,7 @@ every build randomises identifiers and constants:
 """
 import re
 
-from .lualex import split_strings, lua_unescape, lua_escape
+from .lualex import split_strings, lua_unescape, lua_escape, tokenize, render, Tok
 
 NUM = r"(?:\d+\.?\d*(?:[eE][+-]?\d+)?)"
 LIT = r"""(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*")"""
@@ -155,25 +155,136 @@ def resolve_states(src, helpers=None):
 
 
 # --------------------------------------------------------------------------- if-exprs
-_IFEXPR = re.compile(r"=\s*if\s+(?P<c>[^;]+?)\s+then\s+(?P<a>[^;]+?)\s+else\s+(?P<b>[^;]+?)(?=;|\s+end\b|$)")
+_EXPR_LEAD = {'=', ',', '(', '{', '[', '..', '+', '-', '*', '/', '%', '^', '#',
+              '==', '~=', '<', '>', '<=', '>=', 'and', 'or', 'not', 'return'}
+_STMT_KW = {'end', 'else', 'elseif', 'until', 'return', 'if', 'while', 'for',
+            'local', 'repeat', 'do', 'then', 'break', 'continue', 'function'}
+
+
+def _assign_start(toks, i):
+    """True if a new assignment statement (`a, b[c].d = ...`) begins at token i."""
+    n = i
+    while True:
+        if n >= len(toks) or toks[n].kind != 'name':
+            return False
+        n += 1
+        while n < len(toks) and toks[n].kind == 'op':
+            if toks[n].val == '.':
+                n += 2
+                continue
+            if toks[n].val == '[':
+                depth = 0
+                while n < len(toks):
+                    if toks[n].kind == 'op' and toks[n].val in '([{':
+                        depth += 1
+                    elif toks[n].kind == 'op' and toks[n].val in ')]}':
+                        depth -= 1
+                        if depth == 0:
+                            n += 1
+                            break
+                    n += 1
+                continue
+            break
+        if n < len(toks) and toks[n].kind == 'op' and toks[n].val == ',':
+            n += 1
+            continue
+        return n < len(toks) and toks[n].kind == 'op' and toks[n].val == '='
+
+
+def _expr_end(toks, i):
+    """Where the trailing branch of an if-expression stops.
+
+    It runs until the enclosing statement ends: an explicit `;`, a block keyword,
+    or the start of the next assignment (a name/index chain followed by `=`).
+    """
+    depth, n = 0, len(toks)
+    while i < n:
+        t = toks[i]
+        if t.kind == 'op' and t.val in '([{':
+            depth += 1
+        elif t.kind == 'op' and t.val in ')]}':
+            if depth == 0:
+                return i
+            depth -= 1
+        elif depth == 0:
+            # an if-expression is a single expression, so a top-level comma ends it
+            if t.kind == 'op' and t.val in (';', ','):
+                return i
+            if t.kind == 'kw' and t.val in _STMT_KW:
+                return i
+            if t.kind == 'name' and _assign_start(toks, i):
+                return i
+        i += 1
+    return n
 
 
 def neutralise_if_expressions(src):
-    """Luau `x = if c then a else b` breaks block parsing - rewrite to a call form."""
-    out, n = [], 0
-    for kind, text in split_strings(src):
-        if kind == 'str':
-            out.append(text)
+    """Luau `x = if c then a else b` has no `end`, so it wrecks block parsing.
+
+    Rewrites it to a call form.  Detection is positional: an `if` whose preceding
+    token cannot end a statement is an expression, not a statement.
+    """
+    toks = tokenize(src)
+    n, out, i, total = len(toks), [], 0, 0
+    while i < n:
+        t = toks[i]
+        prev = toks[i - 1] if i else None
+        is_expr_if = (t.kind == 'kw' and t.val == 'if' and prev is not None and
+                      ((prev.kind == 'op' and prev.val in _EXPR_LEAD) or
+                       (prev.kind == 'kw' and prev.val in _EXPR_LEAD)))
+        if not is_expr_if:
+            out.append(t)
+            i += 1
             continue
+        parts, j, ok = [], i + 1, True
         while True:
-            m = _IFEXPR.search(text)
-            if not m:
+            k = j
+            while k < n and not (toks[k].kind == 'kw' and toks[k].val == 'then'):
+                k += 1
+            if k >= n:
+                ok = False
                 break
-            n += 1
-            text = text[:m.start()] + '=IFEXP(%s,%s,%s)' % (
-                m.group('c'), m.group('a'), m.group('b')) + text[m.end():]
-        out.append(text)
-    return ''.join(out), n
+            parts.append(toks[j:k])                      # condition
+            j = k + 1
+            k = j
+            depth = 0
+            while k < n:
+                u = toks[k]
+                if u.kind == 'op' and u.val in '([{':
+                    depth += 1
+                elif u.kind == 'op' and u.val in ')]}':
+                    depth -= 1
+                elif depth == 0 and u.kind == 'kw' and u.val in ('else', 'elseif'):
+                    break
+                k += 1
+            if k >= n:
+                ok = False
+                break
+            parts.append(toks[j:k])                      # value when true
+            if toks[k].val == 'elseif':
+                j = k + 1
+                continue
+            j = k + 1
+            e = _expr_end(toks, j)
+            parts.append(toks[j:e])                      # value when false
+            j = e
+            break
+        if not ok:
+            out.append(t)
+            i += 1
+            continue
+        total += 1
+        out.append(Tok('name', 'IFEXP', t.pos))
+        out.append(Tok('op', '(', t.pos))
+        for x, part in enumerate(parts):
+            if x:
+                out.append(Tok('op', ',', t.pos))
+            out.append(Tok('op', '(', t.pos))
+            out.extend(part)
+            out.append(Tok('op', ')', t.pos))
+        out.append(Tok('op', ')', t.pos))
+        i = j
+    return render(out), total
 
 
 # --------------------------------------------------------------------------- payload

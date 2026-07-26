@@ -170,7 +170,7 @@ def analyse_reader(lin, src, spec, rep):
             elif nm:
                 shifted[lhs] = nm
             continue
-        m = re.fullmatch(r"IFEXP\(\s*\w+\s*<\s*(32768|8388608)\s*,.*", rhs)
+        m = re.fullmatch(r"IFEXP\(\(?\s*\w+\s*<\s*(32768|8388608).*", rhs)
         if m:
             signed[lhs] = 'D' if m.group(1) == '32768' else 'E'
             continue
@@ -515,10 +515,13 @@ def analyse_vm(lin, spec, fields, rep):
     for lo, hi, state in ranges:
         sig, fseq, xors = handler_signature(lin, state, norm, stop)
         name = sigdb.SIGNATURES.get(sig)
+        ref = sigdb.REFERENCE_FIELDS.get(sig) or fseq
+        translate = {r: f for r, f in zip(ref, fseq)}
         for op in range(lo, hi + 1):
             rep.handlers[op] = (state, sig, fseq, xors)
             if name:
                 spec.ops[op] = name
+                spec.fieldmap[op] = translate
         if name in ('DECSTR', 'DECIMPORT'):
             spec.dec_offset[name] = 1 if 'CODE[PC+1]' in sig else 0
         if name:
@@ -529,7 +532,8 @@ def analyse_vm(lin, spec, fields, rep):
                 if m and int(m.group(1)) < len(fseq):
                     masks[fseq[int(m.group(1))]] = val
             if masks:
-                spec.masks.setdefault(name, {})['xor'] = masks
+                for op in range(lo, hi + 1):
+                    spec.masks[op] = {'xor': masks}
     rep.vm['ranges'] = ranges
     rep.vm['entry'] = entry
     spec.mutations = mutations.extract(lin, ranges, roles, fields, stop)
