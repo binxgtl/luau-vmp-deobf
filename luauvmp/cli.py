@@ -4,7 +4,7 @@ import io
 import os
 import sys
 
-from . import prelude, container, devirt, disasm, decompile
+from . import prelude, container, devirt, disasm, decompile, luraph
 from .analyse import analyse
 from .spec import Spec
 
@@ -96,6 +96,9 @@ def _report(rep, spec):
 
 
 def cmd_deobf(args):
+    if luraph.detect(read_source(args.input)):
+        raise SystemExit("Luraph v14.x loader detected - not a luau-vmp script. "
+                         "Use `luauvmp luraph %s` to unpack it." % args.input)
     spec, rep, norm, root, data = build(args.input, args.profile, args.verbose, args.image)
     base = args.output or os.path.splitext(args.input)[0]
     src = decompile.decompile(root, spec)
@@ -111,6 +114,9 @@ def cmd_deobf(args):
 
 def cmd_inspect(args):
     src = read_source(args.input)
+    if luraph.detect(src):
+        raise SystemExit("Luraph v14.x loader detected - not a luau-vmp script. "
+                         "Use `luauvmp luraph %s` to unpack it." % args.input)
     prof = Spec.load(args.profile) if args.profile else None
     spec, rep, norm = analyse(src, prof)
     _report(rep, spec)
@@ -144,8 +150,26 @@ def _ranges(ops):
     return ','.join(out)
 
 
+def cmd_luraph(args):
+    src = read_source(args.input)
+    if not luraph.detect(src):
+        raise SystemExit('no Luraph v14.x loader detected in %s' % args.input)
+    vm, bytecode = luraph.unpack(src)
+    base = args.output or os.path.splitext(args.input)[0]
+    with open(base + '.vm.lua', 'wb') as fh:
+        fh.write(vm)
+    with open(base + '.bytecode.bin', 'wb') as fh:
+        fh.write(bytecode)
+    print('wrote %s.vm.lua (%d bytes) - Luraph VM interpreter source'
+          % (base, len(vm)))
+    print('wrote %s.bytecode.bin (%d bytes) - Luraph VM bytecode'
+          % (base, len(bytecode)))
+
+
 def cmd_unpack(args):
     src = read_source(args.input)
+    if luraph.detect(src):
+        return cmd_luraph(args)
     norm, _ = prelude.decrypt_strings(prelude.fold_arith(src))
     blob = prelude.find_payload(norm)
     if not blob:
@@ -190,10 +214,15 @@ def main(argv=None):
     i.add_argument('--handlers', action='store_true', help='dump canonical opcode handlers')
     i.set_defaults(func=cmd_inspect)
 
-    u = sub.add_parser('unpack', help='only base64+LZSS the payload out')
+    u = sub.add_parser('unpack', help='only unpack the payload out')
     u.add_argument('input')
     u.add_argument('-o', '--output')
     u.set_defaults(func=cmd_unpack)
+
+    l = sub.add_parser('luraph', help='unpack a Luraph v14.x loader (base85 + range coder)')
+    l.add_argument('input')
+    l.add_argument('-o', '--output')
+    l.set_defaults(func=cmd_luraph)
 
     args = ap.parse_args(argv)
     return args.func(args) or 0
