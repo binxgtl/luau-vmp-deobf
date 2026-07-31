@@ -66,6 +66,38 @@ luauvmp deobf sample.txt --profile profiles/foxname-2026-07.json
 A profile is a partial `Spec` merged over auto-analysis, so you only list the
 fields that need overriding.
 
+## Luraph v14.x support
+
+`luauvmp` can also unpack **Luraph v14.7** loaders (and other builds that share
+the same base85 + range-coder scheme).  Luraph does not wrap Luau bytecode the
+way luau-vmp does; it compiles the script into its own custom VM bytecode, so
+the goal of this stage is recovery of the two streams the loader builds at
+runtime:
+
+```
+loader.lua -> base85 decode (5 chars -> 4 bytes, "z" zero-runs)
+           -> adaptive range coder + LZ77 decompress
+           -> [0] VM interpreter source (loadstring'ed, ~94 KB)
+           -> [1] custom VM bytecode blob (handed to the interpreter)
+```
+
+```
+$ luauvmp luraph protected.lua
+wrote protected.vm.lua      (Luraph VM interpreter source)
+wrote protected.bytecode.bin (Luraph VM bytecode)
+```
+
+`luauvmp unpack` detects Luraph loaders automatically, and `deobf`/`inspect`
+will tell you when a file is a Luraph (rather than luau-vmp) target.  The
+recovered interpreter is still obfuscated (state-machine handlers + arithmetic
+noise); feeding it to a devirtualiser is the next stage for full source
+recovery.
+
+### Detection
+
+* `LPH` magic + the base85 constants (`*52200625`, `*614125`) in the header
+* two `[==[ ... ]==]` payload literals (small interpreter, big bytecode)
+
 ## MoonVeil, and other staged loaders
 
 Some builds - *MoonVeil v1.4.5* among them - do not put the script in the file at
@@ -204,35 +236,3 @@ No sample is bundled. Point the tool at a file you already have.
 ## Licence
 
 MIT — see `LICENSE`.
-
-## Luraph v14.x support
-
-`luauvmp` can also unpack **Luraph v14.7** loaders (and other builds that share
-the same base85 + range-coder scheme).  Luraph does not wrap Luau bytecode the
-way luau-vmp does; it compiles the script into its own custom VM bytecode, so
-the goal of this stage is recovery of the two streams the loader builds at
-runtime:
-
-```
-loader.lua -> base85 decode (5 chars -> 4 bytes, "z" zero-runs)
-           -> adaptive range coder + LZ77 decompress
-           -> [0] VM interpreter source (loadstring'ed, ~94 KB)
-           -> [1] custom VM bytecode blob (handed to the interpreter)
-```
-
-```
-$ luauvmp luraph protected.lua
-wrote protected.vm.lua      (Luraph VM interpreter source)
-wrote protected.bytecode.bin (Luraph VM bytecode)
-```
-
-`luauvmp unpack` detects Luraph loaders automatically, and `deobf`/`inspect`
-will tell you when a file is a Luraph (rather than luau-vmp) target.  The
-recovered interpreter is still obfuscated (state-machine handlers + arithmetic
-noise); feeding it to a devirtualiser is the next stage for full source
-recovery.
-
-### Detection
-
-* `LPH` magic + the base85 constants (`*52200625`, `*614125`) in the header
-* two `[==[ ... ]==]` payload literals (small interpreter, big bytecode)
