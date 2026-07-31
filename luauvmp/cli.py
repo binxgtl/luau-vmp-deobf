@@ -1,10 +1,12 @@
 """Command line interface."""
 import argparse
+import re
 import io
 import os
 import sys
 
 from . import prelude, container, devirt, disasm, decompile, luraph
+from . import luraph_devirt, luraph_pseudo, luraph_flow
 from .analyse import analyse
 from .spec import Spec
 
@@ -166,6 +168,34 @@ def cmd_luraph(args):
           % (base, len(bytecode)))
 
 
+def cmd_luraph_devirt(args):
+    """Stages 2-4: devirtualize a proto dump, reconstruct pseudo + flow."""
+    with io.open(args.proto, encoding='utf-8', errors='replace') as fh:
+        ptxt = fh.read()
+    with io.open(args.strings, encoding='utf-8', errors='replace') as fh:
+        stxt = fh.read()
+    instrs = luraph_devirt.parse_proto_dump(ptxt)
+    strings = luraph_devirt.parse_strings(stxt)
+    if not instrs:
+        raise SystemExit('no Luraph instructions parsed from %s (bad proto dump?)' % args.proto)
+    base = args.output or os.path.splitext(args.proto)[0]
+
+    dis = luraph_devirt.devirtualize(instrs, strings)
+    _write(base + '.devirt.dis', '\n'.join(dis))
+
+    parsed = luraph_pseudo.parse_disasm('\n'.join(dis))
+    pseudo = luraph_pseudo.reconstruct(parsed, strings)
+    _write(base + '.pseudo.lua', pseudo)
+
+    flow = luraph_flow.reconstruct(parsed, strings)
+    _write(base + '.flow.lua', flow)
+
+    print('stage2: %d instructions -> %s.devirt.dis' % (len(instrs), base))
+    ncfg = len(re.findall(r'^    \[\d+\] =', pseudo, re.M))
+    print('stage3: %d CONFIG entries -> %s.pseudo.lua' % (ncfg, base))
+    print('stage4: %s.flow.lua' % base)
+
+
 def cmd_unpack(args):
     src = read_source(args.input)
     if luraph.detect(src):
@@ -223,6 +253,14 @@ def main(argv=None):
     l.add_argument('input')
     l.add_argument('-o', '--output')
     l.set_defaults(func=cmd_luraph)
+
+    lr = sub.add_parser('luraph-devirt',
+                        help='stages 2-4: devirtualize a Luraph proto dump into '
+                             'disassembly + pseudo-source + control-flow')
+    lr.add_argument('proto', help='proto dump text (VM debug hook output)')
+    lr.add_argument('strings', help='strings dump text (VM debug hook output)')
+    lr.add_argument('-o', '--output', help='output basename (default: proto dump without extension)')
+    lr.set_defaults(func=cmd_luraph_devirt)
 
     args = ap.parse_args(argv)
     return args.func(args) or 0
