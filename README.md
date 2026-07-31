@@ -90,13 +90,56 @@ wrote protected.bytecode.bin (Luraph VM bytecode)
 `luauvmp unpack` detects Luraph loaders automatically, and `deobf`/`inspect`
 will tell you when a file is a Luraph (rather than luau-vmp) target.  The
 recovered interpreter is still obfuscated (state-machine handlers + arithmetic
-noise); feeding it to a devirtualiser is the next stage for full source
-recovery.
+noise); the two stages below devirtualise that interpreter and trace it at
+runtime, so the loader's real behaviour is readable without executing the
+payload.
 
 ### Detection
 
 * `LPH` magic + the base85 constants (`*52200625`, `*614125`) in the header
 * two `[==[ ... ]==]` payload literals (small interpreter, big bytecode)
+
+### Devirtualising the recovered dump (stages 2-4)
+
+Once the interpreter is running (in a Luau runtime such as `lune`) with its
+debug hooks enabled, it can dump each proto as plain text - one instruction per
+line, plus the string table:
+
+```
+$ luauvmp luraph-devirt proto_dump_39.txt strings_dump_39.txt
+wrote proto_dump_39.devirt.dis   (stage 2 - 1001 instructions, annotated)
+wrote proto_dump_39.pseudo.lua   (stage 3 - CONFIG table + statement trace)
+wrote proto_dump_39.flow.lua     (stage 4 - basic blocks + control-flow edges)
+```
+
+Stage 2 maps every custom opcode back to a Luau semantic using the dispatcher
+table recovered from v14.7.  Stage 3 runs a symbolic pass (register alias
+chasing, `R[14]` CONFIG reconstruction, global/member chain tracking) and emits
+the loader as readable pseudo-source.  Stage 4 lays the instructions out as
+basic blocks, folds arithmetic chains into expressions and lists the twelve
+conditional edges (`TEST` / `EQ?`) recovered from the VM - so the loader's
+real structure (deobf-helper loops, conditionally-built config entries) is
+visible without executing it.
+
+```
+$ luauvmp luraph protected.lua          # stage 1: unpack loader
+$ lune dump_proto.lua                   # run VM with hooks -> proto dump + strings
+$ luauvmp luraph-devirt proto_dump.txt strings_dump.txt   # stages 2-4
+```
+
+### Tracing the recovered VM (stage 5)
+
+`tools/luraph_trace.lua` runs the recovered interpreter under Lune with an
+auto-stubbing Roblox env and logs every global it touches:
+
+```bash
+lune run tools/luraph_trace.lua final.vm.lua final.bytecode.bin trace.log
+```
+
+On the reference v14.7 sample the VM compiles, touches `table`/`bit32`/
+`string`/`buffer`/`coroutine`, then aborts with
+`attempt to yield across metamethod/C-call boundary` - the executor/anti-tamper
+layer refusing a non-Roblox host.  See `docs/luraph-stage5.md`.
 
 ## MoonVeil, and other staged loaders
 
