@@ -61,7 +61,12 @@ def run_full_loader(
 
         _emit(progress, "[2/4] safely capturing prototypes (payload disabled)")
         capture = luraph_capture.run_capture(
-            vm_path, bytecode_path, artifacts, runtime=runtime, timeout=timeout,
+            vm_path,
+            bytecode_path,
+            artifacts,
+            runtime=runtime,
+            timeout=timeout,
+            progress=progress,
         )
 
         _emit(progress, "[3/4] recovering sample-local dispatcher semantics")
