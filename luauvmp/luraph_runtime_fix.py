@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
 
 from . import luraph_capture
 
@@ -25,7 +24,7 @@ def validate_runtime_facts(path: Path) -> None:
 
 
 def install() -> None:
-    """Patch the generated runner to serialise the actual helper table."""
+    """Patch helper serialization and add read-only missing-global telemetry."""
     global _INSTALLED
     if _INSTALLED:
         return
@@ -42,6 +41,21 @@ def install() -> None:
             'writeRuntimeFacts(runtimeState[1])',
             'writeRuntimeFacts(runtimeState)',
         )
+        marker = 'environment._G = environment\n\nlocal function safeLoadString'
+        telemetry = r'''environment._G = environment
+setmetatable(environment, {
+    __index = function(_, key)
+        status("missing safe-capture global: " .. tostring(key))
+        return nil
+    end,
+})
+
+local function safeLoadString'''
+        if marker not in runner:
+            raise luraph_capture.CaptureError(
+                "safe-capture environment marker was not found"
+            )
+        runner = runner.replace(marker, telemetry, 1)
         return runner
 
     original_run = luraph_capture.run_capture
