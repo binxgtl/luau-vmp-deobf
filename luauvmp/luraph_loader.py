@@ -1,14 +1,18 @@
-"""Static facade for the two Luraph v14.x container layouts.
+"""Static facade for the Luraph v14.x container layouts.
 
-Older builds carry separate range/LZ-compressed interpreter and bytecode
-streams. Public v14.7 corpus builds instead keep the interpreter in the Luau
-wrapper and carry one Ascii85 + Zstandard bytecode stream.
+Supported families:
+
+* legacy two-stream Ascii85 + custom range/LZ compression;
+* public one-stream Ascii85 + Zstandard bytecode with the VM in the wrapper; and
+* public two-stream Ascii85 + Zstandard, where the wrapper declares the exact
+  compressed lengths needed to remove the final Ascii85 padding bytes.
 """
 from __future__ import annotations
 
 import io
 import os
 import re
+from typing import List, Optional, Sequence, Tuple
 
 import zstandard as zstd
 
@@ -23,6 +27,12 @@ _DECOMPRESS_CALL = re.compile(
     r"\)",
     re.S,
 )
+_TRIM_ASSIGN = re.compile(
+    r"(?P<name>[A-Za-z_]\w*)\s*=\s*string\s*\.\s*sub\s*\(\s*"
+    r"(?P=name)\s*,\s*1\s*,\s*(?P<length>[0-9][0-9_]*)\s*\)",
+    re.S,
+)
+_ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 _DEFAULT_ZSTD_LIMIT = 256 * 1024 * 1024
 
 
@@ -40,7 +50,9 @@ def _looks_like_luraph_stream(payload):
         code = ord(char)
         if char != "z" and not 33 <= code <= 117:
             return False
-    # Luraph silently ignores a partial trailing Ascii85 group.
+    # Luraph silently ignores a partial trailing Ascii85 group. Our inverse
+    # decoder pads that group to four bytes, so Zstandard layouts must later use
+    # the exact string.sub lengths embedded in the wrapper.
     return len(body) + body.count("z") * 4 >= 5
 
 
@@ -55,15 +67,11 @@ def _luraph_payloads(source):
 
 def _is_single_stream_zstd(source, payloads=None):
     streams = _luraph_payloads(source) if payloads is None else payloads
-    return (
-        len(streams) == 1
-        and "DecompressBuffer" in source
-        and "CompressionAlgorithm" in source
-    )
+    return len(streams) == 1 and "DecompressBuffer" in source
 
 
 def detect(source):
-    """Detect either the legacy two-stream or public single-stream layout."""
+    """Detect supported v14.x stream envelopes without executing the wrapper."""
     payloads = _luraph_payloads(source)
     if len(payloads) >= 2 or _is_single_stream_zstd(source, payloads):
         return True
@@ -103,6 +111,77 @@ def decompress_zstd(data, max_output_size=None):
     return bytes(output)
 
 
+def _declared_trim_lengths(source: str, coded: Sequence[bytes]) -> Optional[List[int]]:
+    """Match wrapper ``string.sub(stream, 1, length)`` declarations to streams.
+
+    Ascii85 expands a partial final group to four bytes in the static decoder.
+    The public wrapper immediately removes zero to three padding bytes before
+    calling EncodingService. A candidate is accepted only when every declared
+    length is within that exact padding window and the assignments occur in
+    stream order.
+    """
+    declarations = [
+        int(match.group("length").replace("_", ""))
+        for match in _TRIM_ASSIGN.finditer(source)
+    ]
+    if not declarations:
+        return None
+
+    matched: List[int] = []
+    cursor = 0
+    for stream in coded:
+        lower = max(0, len(stream) - 3)
+        found = None
+        while cursor < len(declarations):
+            candidate = declarations[cursor]
+            cursor += 1
+            if lower <= candidate <= len(stream):
+                found = candidate
+                break
+        if found is None:
+            return None
+        matched.append(found)
+    return matched
+
+
+def _looks_like_vm_source(data: bytes) -> bool:
+    if not data:
+        return False
+    printable = sum(byte in (9, 10, 13) or 32 <= byte < 127 for byte in data)
+    if printable / len(data) < 0.80:
+        return False
+    text = data.decode("utf-8", errors="ignore")
+    return "function" in text and ("return" in text or "while" in text)
+
+
+def _unpack_zstd_streams(source: str, payloads: Sequence[str]) -> Optional[Tuple[bytes, bytes]]:
+    """Try the public EncodingService container before the legacy range coder."""
+    if "DecompressBuffer" not in source or not payloads:
+        return None
+    coded = [_base.decode_base85(payload, drop=5) for payload in payloads[:2]]
+    trims = _declared_trim_lengths(source, coded)
+    if trims is not None:
+        coded = [stream[:length] for stream, length in zip(coded, trims)]
+
+    # A false positive must not feed arbitrary data to the Zstandard backend.
+    if not all(stream.startswith(_ZSTD_MAGIC) for stream in coded):
+        return None
+
+    decoded = [decompress_zstd(stream) for stream in coded]
+    if len(decoded) == 1:
+        vm_source = externalize_single_stream_vm(source)
+        return vm_source.encode("utf-8", errors="surrogateescape"), decoded[0]
+
+    first, second = decoded[0], decoded[1]
+    if _looks_like_vm_source(first):
+        return first, second
+    if _looks_like_vm_source(second):
+        return second, first
+    raise ValueError(
+        "two-stream Zstandard container did not contain recognizable VM source"
+    )
+
+
 def externalize_single_stream_vm(source):
     """Replace Roblox decompression with the bytecode buffer passed as ``...``.
 
@@ -127,15 +206,16 @@ def externalize_single_stream_vm(source):
 def unpack(source):
     """Return ``(interpreter_source, virtual_bytecode)`` without payload execution."""
     payloads = _luraph_payloads(source)
-    if _is_single_stream_zstd(source, payloads):
-        coded = _base.decode_base85(payloads[0], drop=5)
-        bytecode = decompress_zstd(coded)
-        vm_source = externalize_single_stream_vm(source)
-        return vm_source.encode("utf-8", errors="surrogateescape"), bytecode
+
+    zstd_streams = _unpack_zstd_streams(source, payloads)
+    if zstd_streams is not None:
+        return zstd_streams
 
     if len(payloads) < 2:
-        raise ValueError("expected one Zstd or two legacy Luraph streams, found %d"
-                         % len(payloads))
+        raise ValueError(
+            "expected one Zstd or two legacy Luraph streams, found %d"
+            % len(payloads)
+        )
     streams = []
     for payload in payloads[:2]:
         coded = _base.decode_base85(payload, drop=5)
