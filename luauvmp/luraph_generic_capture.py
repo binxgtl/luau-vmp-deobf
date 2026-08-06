@@ -40,6 +40,18 @@ _FACTORY_ASSIGN = re.compile(
     re.S,
 )
 
+# A second public family returns the constructed application closure inside a
+# one-element table, followed by parser state values. The caller immediately
+# unpacks that table. Replacing only the constructor expression preserves the
+# exact return shape while ensuring the final closure is never constructed.
+_WRAPPED_FINAL_RETURN = re.compile(
+    r"return\s*\{\s*(?P<constructor>"
+    r"(?P<state>[A-Za-z_]\w*)\s*\[\s*(?P<slot>" + public._NUMBER + r")\s*\]"
+    r"\s*\(\s*(?P<root>[A-Za-z_]\w*)\s*,\s*(?P=state)\s*\[\s*"
+    r"(?P<environment>" + public._NUMBER + r")\s*\]\s*\))\s*\}",
+    re.S,
+)
+
 
 @dataclass(frozen=True)
 class Candidate:
@@ -48,24 +60,35 @@ class Candidate:
     opcode: str
     function_source: str
     final_match: object
+    final_style: str
     nested_helpers: Dict[int, Dict[int, str]]
 
 
-def _select(vm_source: str) -> Optional[Candidate]:
-    finals = []
+def _final_sites(vm_source: str):
+    sites = []
     for match in public._PUBLIC_FINAL_RETURN.finditer(vm_source):
         slot = public._integer(match.group("slot"))
         environment = public._integer(match.group("environment"))
-        # The environment slot is sample-local (observed values include 1 and
-        # 26). Safety comes from replacing the final constructor call itself,
+        # The environment slot is sample-local (observed values include 1, 24
+        # and 26). Safety comes from replacing the final constructor call itself,
         # not from assuming a particular helper-table index.
         if slot is not None and environment is not None:
-            finals.append((slot, match))
+            sites.append((slot, match, "direct"))
+    for match in _WRAPPED_FINAL_RETURN.finditer(vm_source):
+        slot = public._integer(match.group("slot"))
+        environment = public._integer(match.group("environment"))
+        if slot is not None and environment is not None:
+            sites.append((slot, match, "wrapped"))
+    return sites
+
+
+def _select(vm_source: str) -> Optional[Candidate]:
+    finals = _final_sites(vm_source)
     if not finals:
         return None
     final_by_slot = {}
-    for slot, match in finals:
-        final_by_slot.setdefault(slot, []).append(match)
+    for slot, match, style in finals:
+        final_by_slot.setdefault(slot, []).append((match, style))
 
     candidates = []
     for match in _FACTORY_ASSIGN.finditer(vm_source):
@@ -85,6 +108,7 @@ def _select(vm_source: str) -> Optional[Candidate]:
                 "factory slot %d has %d final constructors"
                 % (slot, len(final_by_slot[slot]))
             )
+        final_match, final_style = final_by_slot[slot][0]
         nested = public._nested_helpers(vm_source)
         if not nested:
             nested = {table: dict(slots) for table, slots in _LEGACY_NESTED.items()}
@@ -93,7 +117,8 @@ def _select(vm_source: str) -> Optional[Candidate]:
             helper=match.group("helper"),
             opcode=dispatch.group("opcode"),
             function_source=function_source,
-            final_match=final_by_slot[slot][0],
+            final_match=final_match,
+            final_style=final_style,
             nested_helpers=nested,
         ))
 
@@ -101,7 +126,8 @@ def _select(vm_source: str) -> Optional[Candidate]:
         return None
     if len(candidates) != 1:
         details = ", ".join(
-            "slot %d (%d chars)" % (item.slot, len(item.function_source))
+            "slot %d/%s (%d chars)" %
+            (item.slot, item.final_style, len(item.function_source))
             for item in candidates
         )
         raise luraph_capture.CaptureError(
@@ -154,13 +180,26 @@ def instrument_vm_source(vm_source: str) -> str:
         if original_error is not None:
             raise original_error
         raise luraph_capture.CaptureError("VM instrumenter is unavailable")
+
     match = candidate.final_match
-    replacement = "return __LUAUVMP_CAPTURE(%s,%s);" % (
+    callback = "__LUAUVMP_CAPTURE(%s,%s)" % (
         match.group("state"), match.group("root")
     )
-    patched = vm_source[:match.start()] + replacement + vm_source[match.end():]
-    for remaining in public._PUBLIC_FINAL_RETURN.finditer(patched):
-        if public._integer(remaining.group("slot")) == candidate.slot:
+    if candidate.final_style == "direct":
+        start, end = match.start(), match.end()
+        replacement = "return %s;" % callback
+    elif candidate.final_style == "wrapped":
+        start, end = match.start("constructor"), match.end("constructor")
+        replacement = callback
+    else:  # defensive: Candidate is internal, but keep mutation fail-closed.
+        raise luraph_capture.CaptureError(
+            "unsupported inferred final constructor style: %s"
+            % candidate.final_style
+        )
+    patched = vm_source[:start] + replacement + vm_source[end:]
+
+    for slot, _remaining, _style in _final_sites(patched):
+        if slot == candidate.slot:
             raise luraph_capture.CaptureError(
                 "final constructor for inferred slot %d remained after instrumentation"
                 % candidate.slot
