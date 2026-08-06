@@ -56,7 +56,7 @@ def test_payload_execution_is_intercepted_before_root_runs():
 
 def test_lune_runner_has_closed_capture_boundary():
     runner = build_lune_runner('vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv')
-    assert 'chunk(buffer.fromstring(bytecode))' in runner
+    assert 'pcall(chunk, buffer.fromstring(bytecode))' in runner
     assert '__LUAUVMP_CAPTURE = capture' in runner
     assert 'captured Luraph payload closure is intentionally disabled' in runner
     assert 'injectGlobals = false' in runner
@@ -83,6 +83,16 @@ def test_lune_runner_supplies_bootstrap_compatibility_without_privileges():
     assert 'robloxDatatypes = robloxDatatypes' not in runner
     assert 'Instance = robloxDatatypes.Instance' not in runner
     assert 'CFrame = robloxDatatypes.CFrame' not in runner
+
+
+def test_missing_global_telemetry_never_yields_from_metamethod():
+    runner = build_lune_runner('vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv')
+    assert 'local missingSafeGlobals = {}' in runner
+    assert 'missingSafeGlobals[tostring(key)] = true' in runner
+    assert 'status("missing safe-capture global: "' not in runner
+    assert 'status("missing safe-capture globals: "' in runner
+    assert 'local parserOk, parserResult = pcall(chunk, buffer.fromstring(bytecode))' in runner
+    assert 'if not parserOk then' in runner
 
 
 def test_lune_runner_uses_optimized_compile_and_reports_progress():
