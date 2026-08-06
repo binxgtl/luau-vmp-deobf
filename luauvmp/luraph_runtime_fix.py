@@ -42,12 +42,28 @@ def install() -> None:
             'writeRuntimeFacts(runtimeState)',
         )
 
-        # Vector3 is a pure Luau value type used by one public v14.7 parser
-        # during constant decoding. Forward only the native constructor already
-        # provided by Lune; no Roblox services, instances, filesystem or network
-        # capabilities are exposed to the recovered VM.
+        # Roblox datatypes are not injected as runner globals by Lune. Load the
+        # trusted standard library outside the recovered VM, then forward only
+        # the pure Vector3 constructor needed for v14.7 constant parsing. The
+        # module itself (and Instance, auth, filesystem or network APIs) never
+        # enters the VM environment.
+        require_marker = 'local stdio = require("@lune/stdio")\n'
+        trusted_import = (
+            'local stdio = require("@lune/stdio")\n'
+            'local robloxDatatypes = require("@lune/roblox")\n'
+        )
+        if require_marker not in runner:
+            raise luraph_capture.CaptureError(
+                "safe-capture trusted import marker was not found"
+            )
+        runner = runner.replace(require_marker, trusted_import, 1)
+
         datatype_marker = '    utf8 = utf8,\n}'
-        datatype_environment = '    utf8 = utf8,\n    Vector3 = Vector3,\n}'
+        datatype_environment = (
+            '    utf8 = utf8,\n'
+            '    Vector3 = robloxDatatypes.Vector3,\n'
+            '}'
+        )
         if datatype_marker not in runner:
             raise luraph_capture.CaptureError(
                 "safe-capture datatype environment marker was not found"
