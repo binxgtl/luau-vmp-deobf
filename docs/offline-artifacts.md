@@ -27,3 +27,22 @@ The factory, runtime facts, typed IR, and any precomputed semantics must all com
 from the same protected sample. Mixing artifacts can produce plausible-looking
 but incorrect output, so every opcode used by the tree is validated before the
 output directory is committed.
+
+## Automatic strict fallback
+
+`luauvmp luraph-full` first performs strict parser capture. Some staged loaders
+then require a sample-local bootstrap finalizer, which can exceed its bounded
+instruction budget or deliberately fail to converge. The pipeline now records
+that error and continues from the strict capture by default, producing the same
+pseudo and structural outputs as artifact mode.
+
+Check `pipeline.json` before treating output as final application code:
+
+- `capture_kind: "finalised-staged"` means the staged application capture
+  completed.
+- `capture_kind: "strict-fallback"` means dispatcher recovery and
+  devirtualisation succeeded from the pre-finalization tree.
+- `finalization_error` preserves a bounded explanation of the fallback.
+
+Set `LUAUVMP_FINALIZE_FALLBACK=0` to restore fail-fast behavior for workflows
+that require a completed staged capture.
