@@ -33,6 +33,8 @@ _NEW_STEP = '''local __stepCount = 0
 local __stepBudget = %d
 local __lastProto, __lastPc, __lastOpcode = nil, nil, nil
 local __protoStepCounts = {}
+local __protoTransitions = {}
+local __previousProto = nil
 local function __LUAUVMP_PROTO_ID(proto)
     local id = protoIds[proto]
     if id == nil then
@@ -40,15 +42,19 @@ local function __LUAUVMP_PROTO_ID(proto)
     end
     return id
 end
-local function __LUAUVMP_TOP_PROTOS(limit)
+local function __LUAUVMP_SORTED_COUNTS(source)
     local rows = {}
-    for id, count in __protoStepCounts do
-        rows[#rows + 1] = { id, count }
+    for key, count in source do
+        rows[#rows + 1] = { key, count }
     end
     table.sort(rows, function(a, b)
-        if a[2] == b[2] then return a[1] < b[1] end
+        if a[2] == b[2] then return tostring(a[1]) < tostring(b[1]) end
         return a[2] > b[2]
     end)
+    return rows
+end
+local function __LUAUVMP_TOP_PROTOS(limit)
+    local rows = __LUAUVMP_SORTED_COUNTS(__protoStepCounts)
     local parts = {}
     local stop = math.min(limit, #rows)
     for index = 1, stop do
@@ -65,10 +71,68 @@ local function __LUAUVMP_TOP_PROTOS(limit)
     end
     return table.concat(parts, ";")
 end
+local function __LUAUVMP_TOP_TRANSITIONS(limit)
+    local rows = __LUAUVMP_SORTED_COUNTS(__protoTransitions)
+    local parts = {}
+    local stop = math.min(limit, #rows)
+    for index = 1, stop do
+        parts[#parts + 1] = tostring(rows[index][1]) .. ":" .. tostring(rows[index][2])
+    end
+    return table.concat(parts, ";")
+end
+local function __LUAUVMP_CONSTANT_SUMMARY(proto)
+    local constants = type(proto) == "table" and proto[3] or nil
+    if type(constants) ~= "table" then return "none" end
+    local counts = {}
+    local total = 0
+    for _, value in constants do
+        local kind = type(value)
+        counts[kind] = (counts[kind] or 0) + 1
+        total += 1
+    end
+    local kinds = {}
+    for kind, count in counts do
+        kinds[#kinds + 1] = kind .. "=" .. tostring(count)
+    end
+    table.sort(kinds)
+    return tostring(total) .. "[" .. table.concat(kinds, ",") .. "]"
+end
+local function __LUAUVMP_PROTO_DUMP(id)
+    local proto = protoList[id + 1]
+    if type(proto) ~= "table" then return "proto=" .. tostring(id) .. " missing" end
+    local ops = proto[4]
+    local opcodeText = {}
+    if type(ops) == "table" then
+        for index = 1, #ops do opcodeText[index] = tostring(ops[index]) end
+    end
+    local fields = {}
+    for _, field in { 2, 6, 7, 8, 9, 11 } do
+        local value = proto[field]
+        fields[#fields + 1] = tostring(field) .. "=" .. tostring(type(value) == "table" and #value or -1)
+    end
+    return "proto=" .. tostring(id)
+        .. " steps=" .. tostring(__protoStepCounts[id] or 0)
+        .. " params=" .. tostring(proto[10])
+        .. " constants=" .. __LUAUVMP_CONSTANT_SUMMARY(proto)
+        .. " fields=" .. table.concat(fields, ",")
+        .. " ops=" .. table.concat(opcodeText, ",")
+end
+local function __LUAUVMP_PRINT_HOT_DUMPS(limit)
+    local rows = __LUAUVMP_SORTED_COUNTS(__protoStepCounts)
+    local stop = math.min(limit, #rows)
+    for index = 1, stop do
+        print("[finalize] hot " .. __LUAUVMP_PROTO_DUMP(rows[index][1]))
+    end
+end
 local function __LUAUVMP_STEP(proto, pc, opcode)
     __stepCount += 1
     local protoId = __LUAUVMP_PROTO_ID(proto)
     __protoStepCounts[protoId] = (__protoStepCounts[protoId] or 0) + 1
+    if __previousProto ~= nil then
+        local edge = tostring(__previousProto) .. ">" .. tostring(protoId)
+        __protoTransitions[edge] = (__protoTransitions[edge] or 0) + 1
+    end
+    __previousProto = protoId
     __lastProto, __lastPc, __lastOpcode = protoId, pc, opcode
     if __stepCount %% 1000000 == 0 then
         print("[finalize] bootstrap steps=" .. tostring(__stepCount)
@@ -77,6 +141,8 @@ local function __LUAUVMP_STEP(proto, pc, opcode)
             .. " top=" .. __LUAUVMP_TOP_PROTOS(5))
     end
     if __stepCount > __stepBudget then
+        print("[finalize] top transitions=" .. __LUAUVMP_TOP_TRANSITIONS(12))
+        __LUAUVMP_PRINT_HOT_DUMPS(6)
         error("Luraph bootstrap instruction budget exceeded: " .. tostring(__stepBudget)
             .. " (last proto=" .. tostring(__lastProto)
             .. ", pc=" .. tostring(__lastPc)
