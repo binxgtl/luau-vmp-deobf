@@ -1,0 +1,157 @@
+name: Luraph E2E sandbox
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/luraph-e2e-sandbox.yml"
+      - "luauvmp/**"
+      - "pyproject.toml"
+      - "tests/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: luraph-e2e-sandbox
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    runs-on: [self-hosted, Linux, X64, lune-sandbox]
+    timeout-minutes: 30
+    env:
+      FIXTURE_PATH: /opt/luauvmp-fixtures/protected.lua
+      LUNE_VERSION: "0.10.5"
+      LUAUVMP_INSTRUCTION_BUDGET: "5000000"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package and tests
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e . pytest
+          python -m py_compile luauvmp/*.py tools/*.py
+          python -m pytest -q
+
+      - name: Install pinned Lune
+        shell: bash
+        run: |
+          set -euxo pipefail
+          BIN_DIR="$RUNNER_TEMP/lune-bin"
+          ARCHIVE="$RUNNER_TEMP/lune.zip"
+          rm -rf "$BIN_DIR" "$ARCHIVE"
+          mkdir -p "$BIN_DIR"
+          curl --fail --location --retry 3 \
+            "https://github.com/lune-org/lune/releases/download/v${LUNE_VERSION}/lune-${LUNE_VERSION}-linux-x86_64.zip" \
+            --output "$ARCHIVE"
+          python - "$ARCHIVE" "$BIN_DIR" <<'PY'
+          import sys, zipfile
+          archive, destination = sys.argv[1:]
+          with zipfile.ZipFile(archive) as zf:
+              zf.extractall(destination)
+          PY
+          LUNE_BIN="$(find "$BIN_DIR" -type f -name lune -print -quit)"
+          test -n "$LUNE_BIN"
+          chmod +x "$LUNE_BIN"
+          echo "$(dirname "$LUNE_BIN")" >> "$GITHUB_PATH"
+
+      - name: Verify runtime
+        shell: bash
+        run: |
+          set -euxo pipefail
+          python --version
+          luauvmp --help >/dev/null
+          lune --version
+
+      - name: Require private fixture on runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -s "$FIXTURE_PATH" ]]; then
+            echo "::error::Missing private fixture at $FIXTURE_PATH"
+            echo "Create it on the runner without committing it to GitHub."
+            exit 78
+          fi
+          mkdir -p "$RUNNER_TEMP/luauvmp-fixture"
+          cp "$FIXTURE_PATH" "$RUNNER_TEMP/luauvmp-fixture/protected.lua"
+          chmod 600 "$RUNNER_TEMP/luauvmp-fixture/protected.lua"
+          sha256sum "$RUNNER_TEMP/luauvmp-fixture/protected.lua"
+          wc -c "$RUNNER_TEMP/luauvmp-fixture/protected.lua"
+
+      - name: Run full Luraph pipeline
+        id: pipeline
+        shell: bash
+        run: |
+          set -o pipefail
+          rm -rf recovered recovered.partial-* e2e.log
+          timeout --signal=INT --kill-after=30s 900s \
+            luauvmp luraph-full "$RUNNER_TEMP/luauvmp-fixture/protected.lua" \
+              -o recovered --force --timeout 600 --keep-failed \
+            2>&1 | tee e2e.log
+
+      - name: Validate expected final output
+        shell: bash
+        run: |
+          set -euxo pipefail
+          test -f recovered/pipeline.json
+          test -f recovered/embedded_main.luau
+          test -d recovered/embedded_sources
+          python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          root = Path("recovered")
+          pipeline = json.loads((root / "pipeline.json").read_text(encoding="utf-8"))
+          print(json.dumps(pipeline, indent=2, sort_keys=True))
+
+          source_files = sorted((root / "embedded_sources").glob("*.luau"))
+          main = root / "embedded_main.luau"
+          print(f"embedded_main bytes={main.stat().st_size} sha256={hashlib.sha256(main.read_bytes()).hexdigest()}")
+          for path in source_files:
+              print(f"{path.name} bytes={path.stat().st_size} sha256={hashlib.sha256(path.read_bytes()).hexdigest()}")
+
+          expected_sizes = sorted([1018, 11999, 58546])
+          actual_sizes = sorted({main.stat().st_size, *(p.stat().st_size for p in source_files)})
+          missing = [size for size in expected_sizes if size not in actual_sizes]
+          if missing:
+              raise SystemExit(f"missing expected embedded source sizes: {missing}; got {actual_sizes}")
+          PY
+
+      - name: Preserve private diagnostics on sandbox
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          DEST="$HOME/luauvmp-e2e-runs/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$DEST"
+          cp -a e2e.log "$DEST/" 2>/dev/null || true
+          cp -a recovered "$DEST/" 2>/dev/null || true
+          for dir in recovered.partial-*; do
+            [[ -d "$dir" ]] && cp -a "$dir" "$DEST/"
+          done
+          printf 'Diagnostics retained locally at %s\n' "$DEST"
+          printf 'No protected/decompiled fixture artifacts were uploaded to GitHub.\n'
+
+      - name: Print compact failure trace
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          echo "===== e2e.log tail ====="
+          tail -n 250 e2e.log 2>/dev/null || true
+          echo "===== retained partial directories ====="
+          find . -maxdepth 2 -type d -name 'recovered.partial-*' -print
