@@ -30,9 +30,10 @@ if _os.environ.get("LUAUVMP_E2E_ORIGINAL_BOOTSTRAP") != "1":
     from .luraph_finalize_bitops import install as _install_finalize_bitops
     _install_finalize_bitops()
 
-# Detailed call tracing is useful only for short diagnostic runs and adds
-# substantial overhead. Keep it out of the original-closure measurement.
-if _os.environ.get("LUAUVMP_E2E_ORIGINAL_BOOTSTRAP") != "1":
+# Call tracing is intentionally diagnostic-only: it adds heavy per-call work
+# and caps the bootstrap at 12 million virtual instructions. Never enable it in
+# the production finalisation path unless explicitly requested.
+if _os.environ.get("LUAUVMP_E2E_CALLTRACE") == "1":
     from .luraph_finalize_calltrace import install as _install_finalize_calltrace
     _install_finalize_calltrace()
 
