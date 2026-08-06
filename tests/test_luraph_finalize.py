@@ -38,9 +38,10 @@ def test_finalize_runner_uses_functional_closed_environment_and_diagnostics():
     assert 'local function __runVM(...)' in runner
     assert 'local __LUAUVMP_CAPTURE = capture' in runner
     assert 'local __stepBudget = 12345' in runner
-    assert '__LUAUVMP_STEP(u,X);' in runner
+    assert '__LUAUVMP_STEP(W,u,X);' in runner
     assert '[finalize] bootstrap steps=' in runner
-    assert 'last pc=' in runner
+    assert 'last proto=' in runner
+    assert '__LUAUVMP_TOP_PROTOS' in runner
     assert 'local __realSetfenv = setfenv' in runner
     assert 'environment.getfenv = __closedGetfenv' in runner
     assert 'local getfenv = __closedGetfenv' in runner
