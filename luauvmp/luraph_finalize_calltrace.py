@@ -1,7 +1,9 @@
 """Branch-only call tracing for hot staged bootstrap closures.
 
 The tracer reports only primitive values, string/table lengths and shallow
-numeric state. It never prints protected string contents.
+numeric state. It never prints protected string contents. Crucially, it injects
+at the start of the existing VM closure instead of wrapping that closure;
+Luraph's upvalue/environment machinery depends on function identity.
 """
 from __future__ import annotations
 
@@ -10,8 +12,12 @@ from . import luraph_finalize
 
 _INSTALLED = False
 _MARKER = "-- The VM is compiled as part of this runner, so Lune may use native codegen.\n"
-_FACTORY_RETURN = "return q;end);"
-_TRACE_HELPERS = r'''-- Diagnostic wrapper for the four sample-local hot decoder closures.
+_FUNCTION_ENTRY = "q=(function(...)local u=1;while true do"
+_TRACED_FUNCTION_ENTRY = (
+    "q=(function(...)__LUAUVMP_HOT_ENTER(W,P,...);"
+    "local u=1;while true do"
+)
+_TRACE_HELPERS = r'''-- Diagnostic entry trace for sample-local hot decoder closures.
 -- Never print protected string contents; strings are represented by length only.
 -- Keep this diagnostic run short even if the workflow ceiling is much higher.
 __stepBudget = math.min(__stepBudget, 12000000)
@@ -20,7 +26,6 @@ local __hotCallCounts = {}
 local function __LUAUVMP_PACK(...)
     return { n = select("#", ...), ... }
 end
-local __LUAUVMP_UNPACK = table.unpack or unpack
 local function __LUAUVMP_SAFE_VALUE(value, depth)
     local kind = type(value)
     if kind == "nil" then return "nil" end
@@ -31,12 +36,12 @@ local function __LUAUVMP_SAFE_VALUE(value, depth)
     if depth >= 1 then return "table#" .. tostring(#value) end
     local parts = { "table#" .. tostring(#value) .. "{" }
     local emitted = 0
-    for index = 0, 12 do
+    for index = 0, 16 do
         local item = value[index]
         if item ~= nil then
             emitted += 1
             parts[#parts + 1] = tostring(index) .. "=" .. __LUAUVMP_SAFE_VALUE(item, depth + 1)
-            if emitted >= 8 then break end
+            if emitted >= 10 then break end
         end
     end
     parts[#parts + 1] = "}"
@@ -60,45 +65,24 @@ local function __LUAUVMP_HOT_FINGERPRINT(proto)
     if count == 232 and ops[1] == 186 and ops[2] == 13 and ops[232] == 186 then return "decoder232" end
     return nil
 end
-local function __LUAUVMP_WRAP_HOT(proto, fn, cells)
+local function __LUAUVMP_HOT_ENTER(proto, cells, ...)
     local fingerprint = __LUAUVMP_HOT_FINGERPRINT(proto)
-    if fingerprint == nil then return fn end
+    if fingerprint == nil then return end
     local protoId = __LUAUVMP_PROTO_ID(proto)
-    if type(fn) ~= "function" then
-        print("[finalize] call-trace skipped proto=" .. tostring(protoId)
-            .. " kind=" .. fingerprint .. " fn=" .. type(fn))
-        return fn
-    end
     local key = fingerprint .. "/" .. tostring(protoId)
-    __hotCallCounts[key] = 0
-    print("[finalize] call-trace enabled proto=" .. tostring(protoId)
-        .. " kind=" .. fingerprint
-        .. " fn=" .. type(fn)
-        .. " unpack=" .. type(__LUAUVMP_UNPACK)
-        .. " cells=" .. __LUAUVMP_SAFE_VALUE(cells, 0))
-    return function(...)
-        local callNumber = (__hotCallCounts[key] or 0) + 1
-        __hotCallCounts[key] = callNumber
-        local report = callNumber <= 6 or callNumber % 25000 == 0
-        local arguments
-        if report then
-            arguments = __LUAUVMP_PACK(...)
-            print("[finalize] call proto=" .. tostring(protoId)
-                .. " kind=" .. fingerprint .. " n=" .. tostring(callNumber)
-                .. " args=" .. __LUAUVMP_PACK_SUMMARY(arguments)
-                .. " cells.before=" .. __LUAUVMP_SAFE_VALUE(cells, 0))
-        end
-        local results = __LUAUVMP_PACK(fn(...))
-        if report then
-            print("[finalize] ret proto=" .. tostring(protoId)
-                .. " kind=" .. fingerprint .. " n=" .. tostring(callNumber)
-                .. " values=" .. __LUAUVMP_PACK_SUMMARY(results)
-                .. " cells.after=" .. __LUAUVMP_SAFE_VALUE(cells, 0))
-        end
-        if type(__LUAUVMP_UNPACK) ~= "function" then
-            error("diagnostic call tracer has no unpack function")
-        end
-        return __LUAUVMP_UNPACK(results, 1, results.n)
+    local callNumber = (__hotCallCounts[key] or 0) + 1
+    __hotCallCounts[key] = callNumber
+    if callNumber == 1 then
+        print("[finalize] call-trace enabled proto=" .. tostring(protoId)
+            .. " kind=" .. fingerprint
+            .. " cells=" .. __LUAUVMP_SAFE_VALUE(cells, 0))
+    end
+    if callNumber <= 8 or callNumber % 25000 == 0 then
+        local arguments = __LUAUVMP_PACK(...)
+        print("[finalize] enter proto=" .. tostring(protoId)
+            .. " kind=" .. fingerprint .. " n=" .. tostring(callNumber)
+            .. " args=" .. __LUAUVMP_PACK_SUMMARY(arguments)
+            .. " cells=" .. __LUAUVMP_SAFE_VALUE(cells, 0))
     end
 end
 
@@ -106,7 +90,7 @@ end
 
 
 def install() -> None:
-    """Install call tracing after compatibility and bit-operation patches."""
+    """Install identity-preserving call-entry tracing after other patches."""
     global _INSTALLED
     if _INSTALLED:
         return
@@ -120,13 +104,13 @@ def install() -> None:
                 "call tracer could not locate finaliser sandbox boundary"
             )
         runner = runner.replace(_MARKER, _TRACE_HELPERS + _MARKER, 1)
-        if runner.count(_FACTORY_RETURN) != 1:
+        if runner.count(_FUNCTION_ENTRY) != 1:
             raise luraph_finalize.FinalizeError(
-                "call tracer could not uniquely locate closure factory return"
+                "call tracer could not uniquely locate VM closure entry"
             )
         return runner.replace(
-            _FACTORY_RETURN,
-            "return __LUAUVMP_WRAP_HOT(W,q,P);end);",
+            _FUNCTION_ENTRY,
+            _TRACED_FUNCTION_ENTRY,
             1,
         )
 
