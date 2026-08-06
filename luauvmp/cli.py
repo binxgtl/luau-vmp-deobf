@@ -6,7 +6,8 @@ import os
 import sys
 
 from . import prelude, container, devirt, disasm, decompile, luraph
-from . import luraph_devirt, luraph_pseudo, luraph_flow, luraph_full, luraph_dispatch, luraph_corpus
+from . import (luraph_devirt, luraph_pseudo, luraph_flow, luraph_full,
+               luraph_dispatch, luraph_corpus, luraph_auto)
 from .analyse import analyse
 from .spec import Spec
 
@@ -197,15 +198,35 @@ def cmd_luraph_devirt(args):
 
 
 def cmd_luraph_full(args):
-    """Devirtualize every captured Luraph prototype with sample-local semantics."""
-    program = luraph_full.load_full_ir(args.ir)
-    semantics = luraph_dispatch.load_semantics(args.semantics)
-    used = sorted({ins.opcode for p in program.protos.values() for ins in p.instructions})
-    luraph_dispatch.validate_semantics(semantics, used)
-    out_dir = args.output or (os.path.splitext(args.ir)[0] + '.full-devirt')
-    manifest = luraph_full.write_program(program, semantics, out_dir, split_protos=args.split_protos)
-    print('full: {prototypes} prototypes, {instructions} instructions, '
-          '{opcode_slots} opcode slots -> {out_dir}'.format(out_dir=out_dir, **manifest))
+    """Run the raw-loader pipeline, or the legacy IR + semantics mode."""
+    if args.semantics:
+        program = luraph_full.load_full_ir(args.input)
+        semantics = luraph_dispatch.load_semantics(args.semantics)
+        used = sorted({ins.opcode for p in program.protos.values() for ins in p.instructions})
+        luraph_dispatch.validate_semantics(semantics, used)
+        out_dir = args.output or (os.path.splitext(args.input)[0] + '.full-devirt')
+        manifest = luraph_full.write_program(
+            program, semantics, out_dir, split_protos=args.split_protos)
+        print('full: {prototypes} prototypes, {instructions} instructions, '
+              '{opcode_slots} opcode slots -> {out_dir}'.format(out_dir=out_dir, **manifest))
+        return
+
+    out_dir = args.output or (os.path.splitext(args.input)[0] + '.luraph-full')
+    try:
+        result = luraph_auto.run_full_loader(
+            args.input,
+            out_dir,
+            runtime=args.runtime,
+            timeout=args.timeout,
+            split_protos=args.split_protos,
+            force=args.force,
+            keep_failed=args.keep_failed,
+            progress=print,
+        )
+    except Exception as exc:
+        raise SystemExit('luraph-full failed: %s' % exc)
+    print('complete: {prototypes} prototypes, {instructions} instructions, '
+          '{opcode_slots} opcode slots -> {out_dir}'.format(out_dir=out_dir, **result))
 
 
 def cmd_luraph_corpus(args):
@@ -284,11 +305,21 @@ def main(argv=None):
     lr.add_argument('-o', '--output', help='output basename (default: proto dump without extension)')
     lr.set_defaults(func=cmd_luraph_devirt)
 
-    lf = sub.add_parser('luraph-full',
-                        help='build-independent all-prototype Luraph devirtualisation')
-    lf.add_argument('ir', help='typed multi-prototype IR TSV from the safe capture hook')
-    lf.add_argument('semantics', help='opcode semantics JSON recovered from the same dispatcher')
+    lf = sub.add_parser(
+        'luraph-full',
+        help='one-command Luraph loader -> sample-local full-prototype devirtualisation')
+    lf.add_argument('input', help='protected loader, or typed IR for legacy artifact mode')
+    lf.add_argument('semantics', nargs='?',
+                    help='legacy mode: semantics JSON recovered from the same dispatcher')
     lf.add_argument('-o', '--output', help='output directory')
+    lf.add_argument('--runtime', default='lune',
+                    help='Lune executable/command used for safe prototype capture')
+    lf.add_argument('--timeout', type=int, default=300,
+                    help='safe capture timeout in seconds (default: 300)')
+    lf.add_argument('--force', action='store_true',
+                    help='replace an existing output directory')
+    lf.add_argument('--keep-failed', action='store_true',
+                    help='keep partial decoded artifacts when a stage fails')
     lf.add_argument('--split-protos', action='store_true',
                     help='also emit one file per prototype (bundle output is always written)')
     lf.set_defaults(func=cmd_luraph_full)

@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "luau-vmp-deobf"
-version = "0.2.0"
-description = "Static deobfuscator for Luau scripts protected by a custom bytecode VM"
+version = "0.3.0"
+description = "Static and sandbox-assisted devirtualizer for Luau custom bytecode VMs"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
@@ -22,4 +22,4 @@ classifiers = [
 luauvmp = "luauvmp.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["luauvmp*"]
+include = ["luauvmp*", "tools*"]
