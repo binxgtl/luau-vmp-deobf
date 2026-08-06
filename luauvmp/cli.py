@@ -6,7 +6,7 @@ import os
 import sys
 
 from . import prelude, container, devirt, disasm, decompile, luraph
-from . import luraph_devirt, luraph_pseudo, luraph_flow
+from . import luraph_devirt, luraph_pseudo, luraph_flow, luraph_full, luraph_dispatch, luraph_corpus
 from .analyse import analyse
 from .spec import Spec
 
@@ -196,6 +196,28 @@ def cmd_luraph_devirt(args):
     print('stage4: %s.flow.lua' % base)
 
 
+def cmd_luraph_full(args):
+    """Devirtualize every captured Luraph prototype with sample-local semantics."""
+    program = luraph_full.load_full_ir(args.ir)
+    semantics = luraph_dispatch.load_semantics(args.semantics)
+    used = sorted({ins.opcode for p in program.protos.values() for ins in p.instructions})
+    luraph_dispatch.validate_semantics(semantics, used)
+    out_dir = args.output or (os.path.splitext(args.ir)[0] + '.full-devirt')
+    manifest = luraph_full.write_program(program, semantics, out_dir, split_protos=args.split_protos)
+    print('full: {prototypes} prototypes, {instructions} instructions, '
+          '{opcode_slots} opcode slots -> {out_dir}'.format(out_dir=out_dir, **manifest))
+
+
+def cmd_luraph_corpus(args):
+    """Safely unpack and fingerprint a directory of Luraph samples."""
+    records = luraph_corpus.scan_corpus(args.paths)
+    manifest = luraph_corpus.write_manifest(records, args.output)
+    print('corpus: {samples} samples, {ok} unpacked, {vm_families} VM families, '
+          '{failed} failed -> {output}'.format(output=args.output, **manifest))
+    if args.strict and manifest['failed']:
+        raise SystemExit(2)
+
+
 def cmd_unpack(args):
     src = read_source(args.input)
     if luraph.detect(src):
@@ -261,6 +283,23 @@ def main(argv=None):
     lr.add_argument('strings', help='strings dump text (VM debug hook output)')
     lr.add_argument('-o', '--output', help='output basename (default: proto dump without extension)')
     lr.set_defaults(func=cmd_luraph_devirt)
+
+    lf = sub.add_parser('luraph-full',
+                        help='build-independent all-prototype Luraph devirtualisation')
+    lf.add_argument('ir', help='typed multi-prototype IR TSV from the safe capture hook')
+    lf.add_argument('semantics', help='opcode semantics JSON recovered from the same dispatcher')
+    lf.add_argument('-o', '--output', help='output directory')
+    lf.add_argument('--split-protos', action='store_true',
+                    help='also emit one file per prototype (bundle output is always written)')
+    lf.set_defaults(func=cmd_luraph_full)
+
+    lc = sub.add_parser('luraph-corpus',
+                        help='safely unpack/fingerprint Luraph samples without executing them')
+    lc.add_argument('paths', nargs='+', help='sample files or directories')
+    lc.add_argument('-o', '--output', default='luraph-corpus.json', help='manifest JSON path')
+    lc.add_argument('--strict', action='store_true',
+                    help='exit non-zero when any Luraph sample fails to unpack')
+    lc.set_defaults(func=cmd_luraph_corpus)
 
     args = ap.parse_args(argv)
     return args.func(args) or 0
