@@ -104,18 +104,24 @@ def decompress_zstd(data, max_output_size=None):
 
 
 def externalize_single_stream_vm(source):
-    """Replace Roblox EncodingService decompression with a supplied buffer.
+    """Replace Roblox decompression with the bytecode buffer passed as ``...``.
 
-    The replacement does not run the wrapper. It only makes the recovered VM
-    compilable in the lexical Lune sandbox, where ``__LUAUVMP_BYTECODE`` is a
-    buffer populated from the statically decompressed stream.
+    The capture runner already invokes every recovered VM chunk with the
+    external virtual bytecode buffer. A lexical binding keeps that capability
+    local to the wrapper and avoids adding a writable global to the sandbox.
+    ``Enum`` is stubbed only because the wrapper stores it before the replaced
+    decompression site; no Roblox service is exposed.
     """
     patched, count = _DECOMPRESS_CALL.subn("__LUAUVMP_BYTECODE", source, count=1)
     if count != 1:
         raise ValueError(
             "expected one EncodingService DecompressBuffer call, found %d" % count
         )
-    return patched
+    prefix = (
+        "local __LUAUVMP_BYTECODE = ...;"
+        "local Enum = {CompressionAlgorithm = {}};"
+    )
+    return prefix + patched
 
 
 def unpack(source):
