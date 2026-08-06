@@ -1,5 +1,5 @@
 """luau-vmp-deobf - static deobfuscator for Luau VM-protected scripts."""
-__version__ = '0.5.1'
+__version__ = '0.5.2'
 
 from .spec import Spec           # noqa: F401
 from .analyse import analyse     # noqa: F401
@@ -37,6 +37,13 @@ _install_runtime_fix()
 from .luraph_finalize_compat import install as _install_finalize_compat
 
 _install_finalize_compat()
+
+# The captured ChuoiHub bootstrap contains a finite but extremely hot
+# pure-Luau XOR routine. Replace only its exact no-upvalue prototype fingerprint
+# with native bit32.bxor; unrelated trees remain untouched.
+from .luraph_finalize_bitops import install as _install_finalize_bitops
+
+_install_finalize_bitops()
 
 # Keep the public CLI/API stable while replacing the raw-loader workflow with
 # staged-tree detection, sandboxed bootstrap finalisation and exact source
