@@ -29,6 +29,7 @@ jobs:
       LUNE_VERSION: "0.10.5"
       LUAUVMP_FINALIZE_FALLBACK: "1"
       LUAUVMP_INSTRUCTION_BUDGET: "5000000"
+      LUAUVMP_ZSTD_MAX_OUTPUT: "268435456"
       PYTHONUNBUFFERED: "1"
 
     steps:
@@ -60,6 +61,8 @@ jobs:
           python -m pip install -e .
           python -m py_compile luauvmp/*.py tools/*.py
 
+      # The public v14.7 layout keeps its VM in the wrapper and carries one
+      # Ascii85 + Zstandard bytecode stream, unlike the older two-stream loader.
       - name: Fingerprint first single-stream sample
         run: |
           set -euxo pipefail
