@@ -30,7 +30,7 @@ def test_final_instrumentation_keeps_bootstrap_and_blocks_final_payload():
     assert '__LUAUVMP_STEP(); local X=' in patched
 
 
-def test_finalize_runner_uses_functional_closed_environment_and_diagnostics():
+def test_finalize_runner_uses_fast_closed_production_environment():
     patched = instrument_final_vm_source(synthetic_vm())
     runner = build_finalize_runner(
         patched, 'bc.bin', 'final.tsv', 'facts.tsv', 12345,
@@ -39,9 +39,9 @@ def test_finalize_runner_uses_functional_closed_environment_and_diagnostics():
     assert 'local __LUAUVMP_CAPTURE = capture' in runner
     assert 'local __stepBudget = 12345' in runner
     assert '__LUAUVMP_STEP(W,u,X);' in runner
-    assert '[finalize] bootstrap steps=' in runner
-    assert 'last proto=' in runner
-    assert '__LUAUVMP_TOP_PROTOS' in runner
+    assert 'local function __LUAUVMP_STEP(_proto, _pc, _opcode)' in runner
+    assert '__LUAUVMP_TOP_PROTOS' not in runner
+    assert '[finalize] bootstrap steps=' not in runner
     assert 'local __realSetfenv = setfenv' in runner
     assert 'environment.getfenv = __closedGetfenv' in runner
     assert 'local getfenv = __closedGetfenv' in runner
@@ -51,6 +51,18 @@ def test_finalize_runner_uses_functional_closed_environment_and_diagnostics():
     assert 'local game, workspace, script, Instance = nil' in runner
     assert 'luau.compile(vmSource' not in runner
     assert 'writeRuntimeFacts(runtimeState)' in runner
+
+
+def test_finalize_runner_enables_full_diagnostics_only_on_request(monkeypatch):
+    monkeypatch.setenv('LUAUVMP_FINALIZE_DIAGNOSTICS', '1')
+    patched = instrument_final_vm_source(synthetic_vm())
+    runner = build_finalize_runner(
+        patched, 'bc.bin', 'final.tsv', 'facts.tsv', 12345,
+    )
+    assert '[finalize] bootstrap steps=' in runner
+    assert 'last proto=' in runner
+    assert '__LUAUVMP_TOP_PROTOS' in runner
+    assert '__protoTransitions' in runner
 
 
 def test_finalize_runner_replaces_only_exact_hot_helper_shapes():
