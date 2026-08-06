@@ -7,7 +7,8 @@ and construct the final application closure only after a bootstrap pass.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterator, Optional
+from typing import Dict, Iterator, Optional
+import json
 import re
 
 from . import luraph_capture
@@ -29,6 +30,29 @@ _DISPATCH_LOCAL = re.compile(
     r"while\s+true\s+do\s+local\s+(?P<opcode>[A-Za-z_]\w*)\s*=",
     re.S,
 )
+_DIRECT_ALIAS = re.compile(
+    r"(?<![A-Za-z0-9_.])(?P<name>[A-Za-z_]\w*)\s*=\s*"
+    r"(?P<module>bit32|string|math)\.(?P<function>[A-Za-z_]\w*)"
+)
+_MODULE_ALIAS = re.compile(
+    r"(?<![A-Za-z0-9_.])(?P<name>[A-Za-z_]\w*)\s*=\s*"
+    r"(?P<module>bit32|string|math)(?!\s*\.)"
+)
+_NESTED_ASSIGN = re.compile(
+    r"(?:\(\s*)?(?P<table>[A-Za-z_]\w*)(?:\s*\))?\s*"
+    r"\[\s*(?P<table_slot>" + _NUMBER + r")\s*\]\s*"
+    r"\[\s*(?P<function_slot>" + _NUMBER + r")\s*\]\s*=\s*"
+    r"\(?\s*(?P<object>[A-Za-z_]\w*)\.(?P<alias>[A-Za-z_]\w*)"
+    r"(?:\.(?P<function>[A-Za-z_]\w*))?\s*\)?",
+    re.S,
+)
+_SUPPORTED_HELPERS = {
+    "bit32.band", "bit32.bnot", "bit32.bor", "bit32.bxor",
+    "bit32.countlz", "bit32.countrz", "bit32.lrotate", "bit32.lshift",
+    "bit32.rrotate", "bit32.rshift",
+    "math.ceil", "math.floor", "math.modf", "math.pi",
+    "string.byte", "string.len", "string.packsize", "string.unpack",
+}
 
 
 @dataclass(frozen=True)
@@ -150,6 +174,43 @@ def _function_end(source: str, function_start: int) -> int:
     raise luraph_capture.CaptureError("public slot-59 factory did not terminate")
 
 
+def _nested_helpers(vm_source: str) -> Dict[int, Dict[int, str]]:
+    """Resolve helper identities assigned into runtime sub-tables.
+
+    The public family copies native bit/string/math functions through randomized
+    object-field aliases before placing them in helper tables such as slots 52
+    and 0x34. Only a small, pure allow-list is emitted to the specializer.
+    """
+    direct = {
+        match.group("name"): "%s.%s" % (
+            match.group("module"), match.group("function")
+        )
+        for match in _DIRECT_ALIAS.finditer(vm_source)
+    }
+    modules = {
+        match.group("name"): match.group("module")
+        for match in _MODULE_ALIAS.finditer(vm_source)
+    }
+    nested: Dict[int, Dict[int, str]] = {}
+    for match in _NESTED_ASSIGN.finditer(vm_source):
+        table_slot = _integer(match.group("table_slot"))
+        function_slot = _integer(match.group("function_slot"))
+        if table_slot is None or function_slot is None:
+            continue
+        alias = match.group("alias")
+        function = match.group("function")
+        if function is not None and alias in modules:
+            identity = "%s.%s" % (modules[alias], function)
+        elif function is None:
+            identity = direct.get(alias)
+        else:
+            identity = None
+        if identity not in _SUPPORTED_HELPERS:
+            continue
+        nested.setdefault(table_slot, {})[function_slot] = identity
+    return nested
+
+
 def _public_factory(vm_source: str) -> Optional[str]:
     candidates = []
     for match in _FACTORY_ASSIGN.finditer(vm_source):
@@ -173,10 +234,20 @@ def _public_factory(vm_source: str) -> Optional[str]:
         )
     helper = match.group("helper")
     opcode = dispatch.group("opcode")
+    nested = _nested_helpers(vm_source)
+    if not nested:
+        raise luraph_capture.CaptureError(
+            "public wrapper did not expose any recognized nested helpers"
+        )
     marker = (
         "-- LUAUVMP_PUBLIC_V147=1\n"
         "-- LUAUVMP_HELPER_VAR=%s\n"
-        "-- LUAUVMP_DISPATCH_VAR=%s\n" % (helper, opcode)
+        "-- LUAUVMP_DISPATCH_VAR=%s\n"
+        "-- LUAUVMP_NESTED_HELPERS=%s\n" % (
+            helper,
+            opcode,
+            json.dumps(nested, separators=(",", ":"), sort_keys=True),
+        )
     )
     return marker + "(" + function_source + ")"
 
