@@ -86,7 +86,7 @@ jobs:
             public-samples/Luraph/v14.7 \
             --shard-index "${{ matrix.shard }}" \
             --shard-count 8 \
-            --timeout 180 \
+            --timeout 60 \
             -o "corpus-results/shard-${{ matrix.shard }}"
 
       - name: Upload diagnostics
