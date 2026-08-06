@@ -31,6 +31,12 @@ lune --version
 
 ## Luraph: one command
 
+> **Required version: 0.3.3 or newer.** Versions 0.3.0–0.3.2 patched the
+> final closure return, but Luraph can invoke the root closure earlier inside
+> its parser state machine. Those versions may hang while protected bytecode
+> is already running inside the restricted sandbox. Update before analysing a
+> sample.
+
 ```bash
 luauvmp luraph-full protected.lua -o recovered
 ```
@@ -41,7 +47,7 @@ That single command performs the complete instruction-level pipeline:
 protected.lua
   -> static base85/range-code unpack
   -> recovered interpreter + custom bytecode
-  -> patch payload-closure construction
+  -> intercept the immediate root-closure call
   -> safe prototype capture under Lune
   -> recover runtime helper facts
   -> specialise this sample's dispatcher
@@ -87,13 +93,16 @@ time and `payload_executed: false`.
 
 ### Safety boundary
 
-The loader itself and the returned payload closure are not executed.
+The outer loader is unpacked statically. The only dynamic step is the recovered
+VM's **bytecode parser**. Before Lune loads it, `luraph-full` replaces the
+parser's immediate root-closure construction-and-call site with a capture
+callback. It also replaces the later final closure construction with a return
+of the disabled callback result. The callback serialises prototypes before any
+root instruction can run.
 
-The only dynamic step is the recovered VM's **bytecode parser**. Before Lune
-loads it, `luraph-full` replaces the one call that constructs the executable
-payload closure with a capture callback. The callback serialises prototypes and
-returns a disabled function. The capture environment does not provide Roblox,
-executor or network APIs.
+The capture environment does not provide Roblox, executor, network, filesystem
+or process APIs. Instrumentation fails closed unless exactly one early execution
+site and one final closure return are found.
 
 Decoded artifacts can still contain secrets already present in the input. Do
 not publish raw output before checking for tokens, webhooks, cookies, hardware
@@ -199,7 +208,7 @@ python -m pytest -q
 
 When adding a new Luraph family, preserve these invariants:
 
-1. never call the returned payload closure;
+1. never call the root or returned payload closure;
 2. recover dispatcher semantics from the same sample;
 3. reject missing opcode semantics;
 4. keep the instruction-level bundle as the auditable ground truth;
