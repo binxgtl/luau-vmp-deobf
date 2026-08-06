@@ -1,0 +1,99 @@
+name: Luraph v14.7 public corpus
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/luraph-v147-public-corpus.yml"
+      - "luauvmp/**"
+      - "tools/run_luraph_v147_corpus.py"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: luraph-v147-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    env:
+      LUNE_VERSION: "0.10.5"
+      LUAUVMP_FINALIZE_FALLBACK: "1"
+      LUAUVMP_INSTRUCTION_BUDGET: "5000000"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout deobfuscator
+        uses: actions/checkout@v4
+
+      - name: Checkout public samples sparsely
+        uses: actions/checkout@v4
+        with:
+          repository: terrorlua/obfuscator-samples
+          ref: a6ecd0ea7112c6a65d4b7acba40acc9e280301e3
+          path: public-samples
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            Luraph/v14.7
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m py_compile luauvmp/*.py tools/*.py
+
+      - name: Install pinned Lune
+        shell: bash
+        run: |
+          set -euxo pipefail
+          archive="$RUNNER_TEMP/lune.zip"
+          bindir="$RUNNER_TEMP/lune-bin"
+          curl --fail --location --retry 3 \
+            "https://github.com/lune-org/lune/releases/download/v${LUNE_VERSION}/lune-${LUNE_VERSION}-linux-x86_64.zip" \
+            --output "$archive"
+          mkdir -p "$bindir"
+          python - "$archive" "$bindir" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              archive.extractall(sys.argv[2])
+          PY
+          lune="$(find "$bindir" -type f -name lune -print -quit)"
+          test -n "$lune"
+          chmod +x "$lune"
+          echo "$(dirname "$lune")" >> "$GITHUB_PATH"
+
+      - name: Decompile shard
+        run: |
+          set -euxo pipefail
+          python tools/run_luraph_v147_corpus.py \
+            public-samples/Luraph/v14.7 \
+            --shard-index "${{ matrix.shard }}" \
+            --shard-count 8 \
+            --timeout 180 \
+            -o "corpus-results/shard-${{ matrix.shard }}"
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: luraph-v147-shard-${{ matrix.shard }}
+          path: corpus-results/shard-${{ matrix.shard }}
+          if-no-files-found: warn
+          retention-days: 7
