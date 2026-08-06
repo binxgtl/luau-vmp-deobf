@@ -39,9 +39,27 @@ def test_detect_luraph_loader():
     assert luraph.detect(src) is True
 
 
+def test_detect_rewritten_public_v147_loader_without_decimal_constants():
+    vm = _encode_base85(b'vm-source-here')
+    bytecode = _encode_base85(b'\x01\x02\x03\x04')
+    # Public corpus samples rewrite every surrounding helper and commonly use
+    # different long-bracket delimiters. Only the two stream envelopes survive.
+    src = '-- protected using Luraph v14.7\nreturn({O=[=[%s]=],B=[==[%s]==]})' % (
+        vm, bytecode,
+    )
+    assert '52200625' not in src
+    assert '614125' not in src
+    assert luraph.detect(src) is True
+
+
 def test_detect_rejects_plain_lua():
     assert luraph.detect("print('hello world')") is False
     assert luraph.detect("local x = 52200625 + 1") is False
+
+
+def test_detect_rejects_arbitrary_lph_long_strings():
+    src = 'return [=[LPH$not base85 whitespace]=], [==[LPH$also invalid]==]'
+    assert luraph.detect(src) is False
 
 
 def test_detect_requires_two_payloads():
@@ -75,7 +93,7 @@ def test_unpack_requires_two_streams():
 
 def test_unpack_corrupt_stream_raises():
     # valid-looking loader whose range-coder stream is garbage
-    src = _loader('!!!!!', '!!!!!')
+    src = _loader('LPH\x0e!!!!!', 'LPH\x0e!!!!!')
     with pytest.raises(ValueError):
         luraph.unpack(src)
 
