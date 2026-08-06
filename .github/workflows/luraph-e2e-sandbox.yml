@@ -68,6 +68,15 @@ jobs:
           test -n "$LUNE_BIN"
           chmod +x "$LUNE_BIN"
           echo "$(dirname "$LUNE_BIN")" >> "$GITHUB_PATH"
+          cp "$LUNE_BIN" "$RUNNER_TEMP/lune-0.10.5-linux-x86_64"
+
+      - name: Export pinned Lune binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lune-0.10.5-linux-x86_64
+          path: ${{ runner.temp }}/lune-0.10.5-linux-x86_64
+          if-no-files-found: error
+          retention-days: 1
 
       - name: Verify runtime
         shell: bash
