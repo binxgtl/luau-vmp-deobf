@@ -10,7 +10,9 @@ import tempfile
 import time
 
 from . import luraph_loader as luraph
-from . import luraph_capture, luraph_dispatch, luraph_full, luraph_recover
+from . import (
+    luraph_capture, luraph_decompiler, luraph_dispatch, luraph_full, luraph_recover,
+)
 
 
 class PipelineError(RuntimeError):
@@ -33,7 +35,11 @@ def run_full_loader(
     keep_failed: bool = False,
     progress: Optional[Callable[[str], None]] = None,
 ) -> dict:
-    """Run unpack -> safe capture -> dispatcher recovery -> devirtualisation."""
+    """Run unpack -> safe capture -> dispatcher recovery -> source decompile.
+
+    Protected bytecode is never invoked. The generated Luau is compiled for
+    syntax validation through Lune, but the generated program is not executed.
+    """
     source_path = Path(input_path)
     output = Path(output_dir)
     if not source_path.is_file():
@@ -52,14 +58,14 @@ def run_full_loader(
         artifacts = stage / "artifacts"
         artifacts.mkdir()
 
-        _emit(progress, "[1/4] statically unpacking loader")
+        _emit(progress, "[1/5] statically unpacking loader")
         vm_source, bytecode = luraph.unpack(source)
         vm_path = artifacts / "interpreter.vm.luau"
         bytecode_path = artifacts / "bytecode.bin"
         vm_path.write_bytes(vm_source)
         bytecode_path.write_bytes(bytecode)
 
-        _emit(progress, "[2/4] safely capturing prototypes (payload disabled)")
+        _emit(progress, "[2/5] safely capturing prototypes (payload disabled)")
         capture = luraph_capture.run_capture(
             vm_path,
             bytecode_path,
@@ -69,28 +75,57 @@ def run_full_loader(
             progress=progress,
         )
 
-        _emit(progress, "[3/4] recovering sample-local dispatcher semantics")
+        _emit(progress, "[3/5] recovering sample-local dispatcher semantics")
         semantics_path = artifacts / "opcode_semantics.json"
         semantics_text_path = artifacts / "opcode_semantics.txt"
         luraph_recover.recover_dispatch(
-            capture.factory, capture.runtime_facts,
-            semantics_path, semantics_text_path,
+            capture.factory,
+            capture.runtime_facts,
+            semantics_path,
+            semantics_text_path,
         )
 
-        _emit(progress, "[4/4] devirtualising the complete prototype tree")
+        _emit(progress, "[4/5] devirtualising the complete prototype tree")
         program = luraph_full.load_full_ir(capture.full_ir)
         semantics = luraph_dispatch.load_semantics(semantics_path)
-        used = sorted({instruction.opcode
-                       for proto in program.protos.values()
-                       for instruction in proto.instructions})
+        used = sorted({
+            instruction.opcode
+            for proto in program.protos.values()
+            for instruction in proto.instructions
+        })
         luraph_dispatch.validate_semantics(semantics, used)
         manifest = luraph_full.write_program(
-            program, semantics, stage, split_protos=split_protos,
+            program,
+            semantics,
+            stage,
+            split_protos=split_protos,
+        )
+
+        _emit(progress, "[5/5] decompiling and compile-checking Luau source")
+        decompiler = luraph_decompiler.write_decompiled(program, semantics, stage)
+        luraph_decompiler.compile_check(
+            stage / decompiler["file"],
+            artifacts,
+            runtime=runtime,
+            timeout=timeout,
+            progress=progress,
+        )
+        decompiler["compile_checked"] = True
+        (stage / "decompiler.json").write_text(
+            json.dumps(decompiler, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+        manifest["decompiled"] = decompiler["file"]
+        manifest["decompiler"] = decompiler
+        for generated in (decompiler["file"], "decompiler.json"):
+            if generated not in manifest["files"]:
+                manifest["files"].append(generated)
+        (stage / "manifest.json").write_text(
+            json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8"
         )
 
         elapsed = time.monotonic() - started
         pipeline = {
-            "format_version": 1,
+            "format_version": 2,
             "input": str(source_path),
             "runtime": runtime if isinstance(runtime, str) else list(runtime),
             "payload_executed": False,
@@ -106,7 +141,9 @@ def run_full_loader(
                 "runtime_facts": "artifacts/runtime_A.tsv",
                 "semantics": "artifacts/opcode_semantics.json",
                 "capture_runner": "artifacts/capture_runner.luau",
+                "compile_runner": "artifacts/compile_decompiled.luau",
             },
+            "decompiler": decompiler,
             "output": manifest,
         }
         (stage / "pipeline.json").write_text(
@@ -119,9 +156,11 @@ def run_full_loader(
         return pipeline
     except Exception:
         if keep_failed:
-            (stage / "FAILED.txt").write_text(
+            failure_note = stage / "FAILED.txt"
+            failure_note.write_text(
                 "The pipeline did not complete. This directory may contain sensitive "
-                "decoded artifacts; review before sharing.\n", encoding="utf-8",
+                "decoded artifacts; review before sharing.\n",
+                encoding="utf-8",
             )
         else:
             shutil.rmtree(stage, ignore_errors=True)

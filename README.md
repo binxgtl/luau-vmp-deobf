@@ -1,12 +1,11 @@
 # luau-vmp-deobf
 
-Static and sandbox-assisted devirtualisation for Luau scripts protected by
-custom bytecode VMs, including **Luraph v14.x**.
+Static and sandbox-assisted analysis for Luau scripts protected by custom
+bytecode VMs, including **Luraph v14.x**.
 
-The project derives VM details from each input instead of assuming one global
-opcode map. Luraph builds can randomise identifiers, dispatcher branches,
-operands, constants and opcode numbers independently, so the full pipeline
-recovers semantics from the VM embedded in the same sample.
+The Luraph pipeline derives its opcode semantics from the VM embedded in the
+same input. It does not assume that two builds share opcode numbers, dispatcher
+branches, operands, constants, or identifier names.
 
 ## Install
 
@@ -14,65 +13,54 @@ Requirements:
 
 - Python 3.9+
 - [Lune](https://lune-org.github.io/docs/getting-started/1-installation/) on
-  `PATH` for the one-command Luraph pipeline
+  `PATH`
 
 ```bash
 git clone https://github.com/binxgtl/luau-vmp-deobf.git
 cd luau-vmp-deobf
 python -m pip install -e .
-```
 
-Check both commands:
-
-```bash
 luauvmp --help
 lune --version
 ```
 
 ## Luraph: one command
 
-> **Required version: 0.3.3 or newer.** Versions 0.3.0–0.3.2 patched the
-> final closure return, but Luraph can invoke the root closure earlier inside
-> its parser state machine. Those versions may hang while protected bytecode
-> is already running inside the restricted sandbox. Update before analysing a
-> sample.
+Use **0.4.0 or newer** for source decompilation:
 
 ```bash
 luauvmp luraph-full protected.lua -o recovered
 ```
 
-That single command performs the complete instruction-level pipeline:
+The command performs five stages:
 
 ```text
 protected.lua
-  -> static base85/range-code unpack
-  -> recovered interpreter + custom bytecode
-  -> intercept the immediate root-closure call
-  -> safe prototype capture under Lune
-  -> recover runtime helper facts
-  -> specialise this sample's dispatcher
-  -> validate every opcode used by every prototype
-  -> emit one dispatcher-free pseudo-Luau bundle
+  -> statically unpack the outer loader
+  -> intercept root-closure execution before the payload can run
+  -> capture the complete prototype tree under a restricted Lune environment
+  -> recover dispatcher semantics from this sample's VM
+  -> devirtualise every captured instruction
+  -> build basic blocks and emit compile-checked Luau source
 ```
 
 Useful options:
 
 ```bash
 luauvmp luraph-full protected.lua -o recovered --force
-luauvmp luraph-full protected.lua -o recovered --runtime /path/to/lune
 luauvmp luraph-full protected.lua -o recovered --timeout 600
+luauvmp luraph-full protected.lua -o recovered --runtime C:\path\to\lune.exe
 luauvmp luraph-full protected.lua -o recovered --split-protos
+luauvmp luraph-full protected.lua -o recovered --keep-failed
 ```
-
-`--split-protos` additionally writes one file per prototype. The default is a
-single streaming bundle because large samples may contain more than one
-thousand functions.
 
 ### Output
 
 ```text
 recovered/
-├── program.pseudo.lua
+├── program.decompiled.luau   # valid Luau source; compile-checked, never executed
+├── program.pseudo.lua        # instruction-level audit representation
+├── decompiler.json           # CFG/lifting/fallback metrics
 ├── manifest.json
 ├── pipeline.json
 ├── all_protos.index.txt
@@ -85,61 +73,80 @@ recovered/
     ├── runtime_A.tsv
     ├── opcode_semantics.json
     ├── opcode_semantics.txt
-    └── capture_runner.luau
+    ├── capture_runner.luau
+    └── compile_decompiled.luau
 ```
 
-`pipeline.json` records prototype/instruction counts, opcode coverage, elapsed
-time and `payload_executed: false`.
+`program.decompiled.luau` contains ordinary Luau functions, a register table per
+prototype, reconstructed basic blocks, direct branches, direct returns, table
+operations, globals, arithmetic, comparisons, common calls, and closure
+references. The generated file is passed to `luau.compile` through Lune. It is
+**not loaded or executed**.
 
-### Safety boundary
+Uncommon super-instructions are not silently discarded. Their recovered
+sample-local semantic body is retained in the relevant basic block and counted
+as a fallback in `decompiler.json`. `program.pseudo.lua` remains the auditable
+ground truth for every instruction.
 
-The outer loader is unpacked statically. The only dynamic step is the recovered
-VM's **bytecode parser**. Before Lune loads it, `luraph-full` replaces the
-parser's immediate root-closure construction-and-call site with a capture
-callback. It also replaces the later final closure construction with a return
-of the disabled callback result. The callback serialises prototypes before any
-root instruction can run.
+## What the source backend recovers
 
-The capture environment does not provide Roblox, executor, network, filesystem
-or process APIs. Instrumentation fails closed unless exactly one early execution
-site and one final closure return are found.
+The decompiler currently recovers:
 
-Decoded artifacts can still contain secrets already present in the input. Do
-not publish raw output before checking for tokens, webhooks, cookies, hardware
-identifiers or private URLs.
+- the complete prototype tree;
+- sample-local opcode meaning;
+- basic blocks and direct CFG edges;
+- register assignments and constants;
+- globals and table accesses;
+- arithmetic, comparisons, concatenation, length and unary operations;
+- common fixed-arity calls;
+- direct jumps, conditional branches and returns;
+- child-prototype closure references;
+- valid Luau syntax verified by the local Lune compiler.
 
-### Troubleshooting Lune compatibility
+The current source backend can retain a `pc` state machine when control flow is
+heavily flattened or when a super-instruction cannot yet be safely structured.
+That is decompiled Luau, but it is not a claim that original `if`/`while` layout
+or original local names have been recovered.
 
-Lune does not expose the Luau `debug` library by default. `luauvmp` 0.3.1 and
-newer inject a restricted `debug.info`/`debug.getinfo` compatibility surface
-and a sandboxed `loadstring` wrapper for the VM bootstrap. If an older checkout
-fails with `The debug library is required on Luau platforms`, update and
-reinstall before retrying:
+Compilation and virtualization can permanently destroy:
 
-```bash
-git pull origin main
-python -m pip install -e .
-luauvmp luraph-full protected.lua -o recovered --force
-```
+- original local/upvalue names;
+- comments and formatting;
+- exact source-level control-flow spelling;
+- code downloaded later from a remote server.
 
-The compatibility surface does not expose stack mutation, upvalue mutation,
-filesystem, network, process, Roblox, or executor APIs.
+## Safety boundary
 
-## Luraph artifact mode
+The outer loader is unpacked statically. Before the recovered VM parser is run,
+`luraph-full` replaces the parser's immediate root-closure construction-and-call
+site with a capture callback. Instrumentation fails closed unless the expected
+early execution site and final closure return are both found exactly once.
 
-The v0.2 workflow remains available for debugging or externally captured data:
+The capture environment does not expose Roblox, executor, network, filesystem,
+or process APIs. A restricted `debug` compatibility layer and sandboxed
+`loadstring` are provided only for VM bootstrap compatibility. The generated
+source is compiled but never executed.
+
+Decoded artifacts can still contain credentials or identifiers already embedded
+in the input. Review output before publishing it.
+
+## Artifact mode
+
+Externally captured IR and semantics can still be processed directly:
 
 ```bash
 luauvmp luraph-full full_ir.tsv opcode_semantics.json -o recovered
 ```
 
-Individual stages are also available:
+Artifact mode remains the instruction-level devirtualizer in this release. The
+five-stage raw-loader path above is the source-decompiler path being validated
+against live Lune captures.
+
+Individual stages remain available:
 
 ```bash
-# Static unpack only
 luauvmp luraph protected.lua -o stage1
 
-# Recover dispatcher semantics manually
 python tools/recover_luraph_dispatch.py \
   interpreter.factory.luau runtime_A.tsv \
   -o opcode_semantics.json
@@ -147,19 +154,33 @@ python tools/recover_luraph_dispatch.py \
 
 ## Corpus regression
 
-Safely unpack and fingerprint a directory without running recovered VM source:
-
 ```bash
 luauvmp luraph-corpus samples/Luraph/v14.7 \
   -o luraph-corpus.json --strict
 ```
 
-The corpus manifest groups structurally similar interpreter builds while still
-recording their exact hashes and unpack failures.
+The corpus command unpacks and fingerprints samples without running recovered
+VM source.
+
+## Reference scale
+
+The source backend has been exercised locally against the large reference
+capture used during development:
+
+- 1,204 prototypes;
+- 127,505 custom instructions;
+- 54,953 reconstructed basic blocks;
+- 92,717 instructions lifted to clean source statements;
+- 34,788 instructions retained as explicit semantic fallbacks;
+- 72.7% clean-lift ratio;
+- about 16 MB of generated Luau source.
+
+These numbers describe that reference capture, not a guaranteed ratio for every
+Luraph build. The live Windows/Lune sample that motivated this release must
+still pass its own stage-5 compile check before that sample is considered
+end-to-end verified.
 
 ## Other custom Luau VMs
-
-For the original base64/LZSS custom-VM pipeline:
 
 ```bash
 luauvmp deobf sample.lua --disasm --strings --spec -v
@@ -167,57 +188,26 @@ luauvmp inspect sample.lua --handlers --normalised
 luauvmp unpack sample.lua
 ```
 
-For staged images captured separately:
-
-```bash
-luauvmp deobf sample.lua --image stage2.bin --strings -v
-```
-
-## What “full” means
-
-For Luraph, “full” means:
-
-- the complete captured prototype tree is processed;
-- opcode semantics come from the same sample's dispatcher;
-- every opcode used by the capture must have a recovered semantic;
-- custom instructions are replaced with dispatcher-free pseudo-Luau;
-- incomplete maps fail before a valid-looking output is written.
-
-It does **not** mean byte-identical recovery of the original source. Compilation
-can destroy local names, comments, formatting and the exact choice between
-semantically equivalent control-flow constructs. Code fetched from a remote
-server is not present in the loader and cannot be recovered from that loader
-alone.
-
-## Validation scale
-
-The streaming writer has been regression-tested at the large reference scale:
-
-- 1,204 prototypes
-- 127,505 custom instructions
-- all 256 opcode slots represented
-- approximately 11 MB of generated pseudo-Luau
-
-No protected sample or decoded payload is bundled in this repository.
-
 ## Development
 
 ```bash
 python -m pytest -q
+python -m py_compile luauvmp/*.py tools/*.py
 ```
 
-When adding a new Luraph family, preserve these invariants:
+When adding a Luraph family, preserve these invariants:
 
-1. never call the root or returned payload closure;
-2. recover dispatcher semantics from the same sample;
+1. never invoke the protected root or returned payload closure;
+2. recover semantics from the same sample;
 3. reject missing opcode semantics;
-4. keep the instruction-level bundle as the auditable ground truth;
-5. add a minimized regression fixture rather than a real protected payload.
+4. keep `program.pseudo.lua` as the instruction-level audit artifact;
+5. preserve unsupported semantics instead of guessing or dropping them;
+6. compile-check generated Luau without executing it;
+7. add minimized regression fixtures rather than protected payloads.
 
 ## Scope and intent
 
-This is an analysis tool for reading unfamiliar protected code before deciding
-whether it is safe to run. Only analyse files you are authorised to inspect.
+Use this project only on code you are authorised to inspect.
 
 ## License
 
