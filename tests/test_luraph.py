@@ -52,6 +52,41 @@ def _single_stream_fixture():
     raise AssertionError('could not construct aligned Zstandard fixture')
 
 
+def _unaligned_compressed(prefix, require_padding=True):
+    compressor = zstd.ZstdCompressor(level=1)
+    for extra in range(1, 4096):
+        original = prefix + (b'x' * extra)
+        compressed = compressor.compress(original)
+        if (len(compressed) % 4 != 0) == require_padding:
+            return original, compressed
+    raise AssertionError('could not construct requested Zstandard alignment')
+
+
+def _two_stream_zstd_fixture():
+    vm_prefix = (
+        b'local D=...;return function() while true do local X=1;'
+        b'if X==1 then return D end end end;'
+    )
+    vm, vm_compressed = _unaligned_compressed(vm_prefix)
+    bytecode, bytecode_compressed = _unaligned_compressed(
+        b'virtual-bytecode-binary\x00\xff'
+    )
+    vm_payload = _encode_base85(vm_compressed)
+    bytecode_payload = _encode_base85(bytecode_compressed)
+    source = (
+        '-- protected using Luraph v14.7\n'
+        'local C=decode([=[%s]=]);local U=decode([==[%s]==]);'
+        'C=string.sub(C,1,%d);U=string.sub(U,1,%d);'
+        'local z=Encoding:DecompressBuffer(buffer.fromstring(C),A);'
+        'C=Encoding:DecompressBuffer(buffer.fromstring(U),A);'
+        'return load(buffer.tostring(z))(buffer.tostring(C));'
+    ) % (
+        vm_payload, bytecode_payload,
+        len(vm_compressed), len(bytecode_compressed),
+    )
+    return source, vm, bytecode, vm_compressed, bytecode_compressed
+
+
 def test_detect_luraph_loader():
     src = _loader(_encode_base85(b'vm-source-here'), _encode_base85(b'\x01\x02\x03\x04'))
     assert luraph.detect(src) is True
@@ -78,6 +113,43 @@ def test_detect_and_unpack_public_single_stream_zstd():
     assert 'local Enum = {CompressionAlgorithm = {}};' in text
     assert 'game:GetService' not in text
     assert '__LUAUVMP_BYTECODE' in text
+
+
+def test_unpack_public_two_stream_zstd_removes_ascii85_padding():
+    source, expected_vm, expected_bytecode, compressed_vm, compressed_bytecode = (
+        _two_stream_zstd_fixture()
+    )
+    coded = [
+        luraph.decode_base85(payload, drop=5)
+        for payload in luraph_loader._luraph_payloads(source)
+    ]
+    assert len(coded[0]) - len(compressed_vm) in (1, 2, 3)
+    assert len(coded[1]) - len(compressed_bytecode) in (1, 2, 3)
+    assert coded[0].startswith(b'\x28\xb5\x2f\xfd')
+    assert coded[1].startswith(b'\x28\xb5\x2f\xfd')
+
+    vm, bytecode = luraph.unpack(source)
+    assert vm == expected_vm
+    assert bytecode == expected_bytecode
+
+
+def test_declared_zstd_lengths_must_match_padding_window():
+    source, _vm, _bytecode, _compressed_vm, _compressed_bytecode = (
+        _two_stream_zstd_fixture()
+    )
+    coded = [
+        luraph.decode_base85(payload, drop=5)
+        for payload in luraph_loader._luraph_payloads(source)
+    ]
+    assert luraph_loader._declared_trim_lengths(source, coded) == [
+        len(_compressed_vm), len(_compressed_bytecode)
+    ]
+    bad = source.replace(
+        'string.sub(C,1,%d)' % len(_compressed_vm),
+        'string.sub(C,1,1)',
+        1,
+    )
+    assert luraph_loader._declared_trim_lengths(bad, coded) is None
 
 
 def test_zstd_output_limit_is_enforced():
