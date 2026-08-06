@@ -53,17 +53,24 @@ def test_finalize_runner_uses_functional_closed_environment_and_diagnostics():
     assert 'writeRuntimeFacts(runtimeState)' in runner
 
 
-def test_finalize_runner_replaces_exact_hot_xor_helper_only():
+def test_finalize_runner_replaces_only_exact_hot_helper_shapes():
     patched = instrument_final_vm_source(synthetic_vm())
-    assert 'local __fast=__LUAUVMP_FASTPATH(W)' in patched
+    assert 'local __fast=__LUAUVMP_FASTPATH(W,P)' in patched
     runner = build_finalize_runner(
         patched, 'bc.bin', 'final.tsv', 'facts.tsv', 12345,
     )
-    assert 'enabled native bit32.bxor bootstrap fast path' in runner
+    assert 'enabled native " .. name .. " bootstrap fast path' in runner
     assert '#ops == 99' in runner
     assert 'ops[12] == 6' in runner
     assert 'ops[68] == 44' in runner
     assert 'return bit32.bxor(a, b)' in runner
+    assert '#ops == 104' in runner
+    assert 'ops[95] == 14' in runner
+    assert 'local finalBit = lastBit or firstBit' in runner
+    assert 'math.floor(value / (2 ^ (firstBit - 1)))' in runner
+    assert '#ops == 33' in runner
+    assert 'type(cells[1]) == "string" and #cells[1] == 8' in runner
+    assert 'local b1, b2, b3, b4 = byteRange(encoded, 1, 4)' in runner
 
 
 def test_finalize_runner_keeps_expensive_calltrace_disabled_by_default():
