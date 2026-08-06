@@ -22,6 +22,7 @@ def fingerprint(path: Path) -> dict:
         "sample": path.name,
         "source_bytes": path.stat().st_size,
         "payloads": len(payloads),
+        "detected": luraph_loader.detect(source),
     }
     if not payloads:
         return result
@@ -32,18 +33,15 @@ def fingerprint(path: Path) -> dict:
         "coded_bytes": len(coded),
         "coded_sha256": hashlib.sha256(coded).hexdigest(),
         "coded_prefix_hex": coded[:64].hex(),
+        "zstd_magic": coded.startswith(b"\x28\xb5\x2f\xfd"),
     })
     try:
-        decoded = luraph_loader.decompress(coded)
+        decoded = luraph_loader.decompress_zstd(coded)
     except Exception as exc:
         result["decompress_error"] = "%s: %s" % (type(exc).__name__, exc)
         return result
-    if decoded is False:
-        result["decompress_error"] = "decoder returned False"
-        return result
     printable = sum(byte in (9, 10, 13) or 32 <= byte < 127 for byte in decoded)
     text = decoded.decode("utf-8", errors="replace")
-    nested = luraph_loader.extract_payloads(text)
     result.update({
         "decoded_bytes": len(decoded),
         "decoded_sha256": hashlib.sha256(decoded).hexdigest(),
@@ -54,8 +52,6 @@ def fingerprint(path: Path) -> dict:
         "decoded_contains_loadstring": "loadstring" in text,
         "decoded_contains_return": "return" in text,
         "decoded_contains_lph": "LPH" in text,
-        "decoded_long_brackets": len(nested),
-        "decoded_nested_lph": sum(payload.startswith("LPH") for payload in nested),
     })
     return result
 
