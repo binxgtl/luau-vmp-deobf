@@ -9,11 +9,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional, Sequence, Union
+from typing import Callable, Optional, Sequence, Union
 import re
 import shlex
 import shutil
 import subprocess
+import queue
+import threading
+import time
 
 
 _FACTORY_START = re.compile(
@@ -102,6 +105,11 @@ def build_lune_runner(
     """Return a self-contained Lune script for the safe capture stage."""
     return r'''local fs = require("@lune/fs")
 local luau = require("@lune/luau")
+local stdio = require("@lune/stdio")
+
+local function status(message)
+    stdio.write("[capture] " .. message .. "\n")
+end
 
 local VM_PATH = %s
 local BYTECODE_PATH = %s
@@ -257,6 +265,7 @@ local function writeRuntimeFacts(runtime)
 end
 
 local function capture(runtimeState, root)
+    status("capture callback entered")
     if type(runtimeState) ~= "table" or type(runtimeState[1]) ~= "table" then
         error("capture received an invalid Luraph runtime state")
     end
@@ -304,21 +313,22 @@ local function capture(runtimeState, root)
             }, "\\t")
         end
         cursor += 1
+        if cursor %% 100 == 1 then
+            status("serialised " .. tostring(cursor - 1) .. " prototypes")
+        end
     end
 
     local lines = { "META\\tprotos\\t" .. tostring(#protoList) }
     table.move(body, 1, #body, 2, lines)
+    status("writing typed IR")
     fs.writeFile(IR_PATH, table.concat(lines, "\\n") .. "\\n")
+    status("capture complete: " .. tostring(#protoList) .. " prototypes")
 
     return function()
         error("captured Luraph payload closure is intentionally disabled")
     end
 end
 
--- Lune intentionally does not expose Luau's debug library. Luraph checks for
--- debug.info while constructing its VM runtime, before the payload closure is
--- returned. Provide a data-only compatibility surface: enough for bootstrap
--- feature detection, but no stack/upvalue mutation primitives.
 local function debugInfo(first, second, third)
     local target = first
     local options = second
@@ -397,8 +407,6 @@ local environment = {
 }
 environment._G = environment
 
--- Preserve loadstring's `(nil, error)` contract while forcing every nested
--- chunk into the same closed environment.
 local function safeLoadString(source, chunkName)
     local ok, result = pcall(luau.load, source, {
         debugName = tostring(chunkName or "Luraph safe nested chunk"),
@@ -412,15 +420,24 @@ end
 environment.loadstring = safeLoadString
 environment.load = safeLoadString
 
+status("reading recovered VM and bytecode")
 local vmSource = fs.readFile(VM_PATH)
 local bytecode = fs.readFile(BYTECODE_PATH)
-local chunk = luau.load(vmSource, {
+status("compiling recovered VM (optimization level 2)")
+local vmBytecode = luau.compile(vmSource, {
+    optimizationLevel = 2,
+    coverageLevel = 0,
+    debugLevel = 0,
+})
+status("running bytecode parser")
+local chunk = luau.load(vmBytecode, {
     debugName = "Luraph safe prototype capture",
     environment = environment,
     injectGlobals = false,
     codegenEnabled = false,
 })
 chunk(buffer.fromstring(bytecode))
+status("VM parser returned")
 ''' % (
         _lua_quote(patched_vm),
         _lua_quote(bytecode),
@@ -449,6 +466,7 @@ def run_capture(
     work_dir: Union[str, Path],
     runtime: Union[str, Sequence[str]] = "lune",
     timeout: int = 300,
+    progress: Optional[Callable[[str], None]] = None,
 ) -> CaptureArtifacts:
     """Instrument and execute only the Luraph bytecode-parser stage under Lune."""
     work = Path(work_dir)
@@ -476,20 +494,66 @@ def run_capture(
 
     command = _normalise_runtime_command(runtime) + ["run", str(runner_path)]
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd=str(work),
             text=True,
-            capture_output=True,
-            timeout=timeout,
-            check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
         )
-    except subprocess.TimeoutExpired as exc:
-        raise CaptureError("Luraph safe capture timed out after %d seconds" % timeout) from exc
     except OSError as exc:
         raise CaptureError("failed to start Lune: %s" % exc) from exc
-    if result.returncode != 0:
-        message = (result.stderr or result.stdout or "unknown Lune error").strip()
+
+    output_lines: list[str] = []
+    output_queue: "queue.Queue[Optional[str]]" = queue.Queue()
+
+    def read_output() -> None:
+        assert process.stdout is not None
+        try:
+            for line in process.stdout:
+                output_queue.put(line.rstrip("\r\n"))
+        finally:
+            output_queue.put(None)
+
+    reader = threading.Thread(target=read_output, name="luraph-capture-output", daemon=True)
+    reader.start()
+    started = time.monotonic()
+    next_heartbeat = started + 15.0
+    stream_closed = False
+
+    while process.poll() is None or not stream_closed:
+        now = time.monotonic()
+        if now - started >= timeout and process.poll() is None:
+            process.kill()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                pass
+            tail = "\n".join(output_lines[-20:]).strip()
+            detail = ("\nlast capture output:\n" + tail) if tail else ""
+            raise CaptureError(
+                "Luraph safe capture timed out after %d seconds%s" % (timeout, detail)
+            )
+        try:
+            item = output_queue.get(timeout=0.25)
+        except queue.Empty:
+            item = ""
+        if item is None:
+            stream_closed = True
+        elif item:
+            output_lines.append(item)
+            if progress is not None:
+                progress(item)
+        if now >= next_heartbeat and process.poll() is None:
+            if progress is not None:
+                progress("[capture] still running (%ds elapsed)" % int(now - started))
+            next_heartbeat = now + 15.0
+
+    reader.join(timeout=1)
+    return_code = process.wait()
+    if return_code != 0:
+        message = "\n".join(output_lines[-40:]).strip() or "unknown Lune error"
         raise CaptureError("Luraph safe capture failed: %s" % message)
     if not ir_path.is_file() or not facts_path.is_file():
         raise CaptureError("Lune exited successfully but did not produce capture artifacts")
