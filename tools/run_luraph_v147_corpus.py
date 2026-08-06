@@ -17,6 +17,8 @@ import subprocess
 import sys
 import time
 
+from luauvmp import luraph_loader
+
 
 TextOrBytes = Optional[Union[str, bytes]]
 
@@ -40,6 +42,50 @@ def _last_progress(log: str) -> Optional[str]:
         if stripped.startswith("[") or stripped.startswith("luraph-full failed:"):
             return stripped[:500]
     return None
+
+
+def _payload_probe(payload: str) -> dict:
+    body = payload[4:] if len(payload) >= 4 else ""
+    ordinals = [ord(char) for char in body]
+    invalid = sorted({
+        ordinal for char, ordinal in zip(body, ordinals)
+        if char != "z" and not 33 <= ordinal <= 117
+    })
+    return {
+        "length": len(payload),
+        "prefix_repr": repr(payload[:24]),
+        "suffix_repr": repr(payload[-24:]),
+        "body_min_ordinal": min(ordinals) if ordinals else None,
+        "body_max_ordinal": max(ordinals) if ordinals else None,
+        "invalid_ordinals": invalid[:32],
+        "invalid_count": sum(
+            char != "z" and not 33 <= ordinal <= 117
+            for char, ordinal in zip(body, ordinals)
+        ),
+        "expanded_length": len(body) + body.count("z") * 4,
+        "structural_match": luraph_loader._looks_like_luraph_stream(payload),
+    }
+
+
+def _source_probe(sample: Path) -> dict:
+    source = sample.read_text(encoding="utf-8", errors="surrogateescape")
+    long_brackets = luraph_loader.extract_payloads(source)
+    lph_payloads = [payload for payload in long_brackets if payload.startswith("LPH")]
+    prefixes = []
+    for payload in long_brackets[:12]:
+        prefixes.append({
+            "length": len(payload),
+            "prefix_repr": repr(payload[:24]),
+        })
+    return {
+        "banner_v147": "Luraph Obfuscator v14.7" in source,
+        "source_contains_lph": "LPH" in source,
+        "long_bracket_count": len(long_brackets),
+        "long_bracket_prefixes": prefixes,
+        "lph_payload_count": len(lph_payloads),
+        "lph_payloads": [_payload_probe(payload) for payload in lph_payloads[:6]],
+        "detected": luraph_loader.detect(source),
+    }
 
 
 def _stop_process(process: subprocess.Popen[bytes]) -> bytes:
@@ -94,8 +140,6 @@ def run_sample(sample: Path, output_root: Path, timeout: int) -> dict:
         timed_out = True
         partial = exc.output or b""
         stopped = _stop_process(process)
-        # communicate() normally returns the complete buffered stream after a
-        # timeout. Keep the larger value to avoid duplicating the prefix.
         output_bytes = stopped if len(stopped) >= len(partial) else partial
     log = _text(output_bytes)
     if timed_out:
@@ -117,6 +161,8 @@ def run_sample(sample: Path, output_root: Path, timeout: int) -> dict:
     pipeline_path = output / "pipeline.json"
     if returncode != 0 or not pipeline_path.is_file():
         record["error"] = "pipeline command timed out" if timed_out else "pipeline command failed"
+        if "not a supported Luraph v14.x loader" in log:
+            record["source_probe"] = _source_probe(sample)
         return record
 
     pipeline = json.loads(pipeline_path.read_text(encoding="utf-8"))
@@ -153,13 +199,14 @@ def _print_failure_tail(record: dict, output_root: Path, lines: int = 30) -> Non
     if record.get("ok"):
         return
     log_path = output_root / str(record["log"])
-    if not log_path.is_file():
-        return
-    tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
-    print("--- %s failure tail ---" % record["sample"], flush=True)
-    for line in tail:
-        print(line, flush=True)
-    print("--- end failure tail ---", flush=True)
+    if log_path.is_file():
+        tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
+        print("--- %s failure tail ---" % record["sample"], flush=True)
+        for line in tail:
+            print(line, flush=True)
+        print("--- end failure tail ---", flush=True)
+    if "source_probe" in record:
+        print("SOURCE_PROBE=" + json.dumps(record["source_probe"], sort_keys=True), flush=True)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -206,7 +253,7 @@ def main(argv: list[str] | None = None) -> int:
             break
 
     summary = {
-        "format_version": 3,
+        "format_version": 4,
         "shard_index": args.shard_index,
         "shard_count": args.shard_count,
         "selected_samples": len(samples),
