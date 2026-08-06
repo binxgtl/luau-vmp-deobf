@@ -50,3 +50,16 @@ def test_finalize_runner_uses_functional_closed_environment_and_diagnostics():
     assert 'local game, workspace, script, Instance = nil' in runner
     assert 'luau.compile(vmSource' not in runner
     assert 'writeRuntimeFacts(runtimeState)' in runner
+
+
+def test_finalize_runner_replaces_exact_hot_xor_helper_only():
+    patched = instrument_final_vm_source(synthetic_vm())
+    assert 'local __fast=__LUAUVMP_FASTPATH(W)' in patched
+    runner = build_finalize_runner(
+        patched, 'bc.bin', 'final.tsv', 'facts.tsv', 12345,
+    )
+    assert 'enabled native bit32.bxor bootstrap fast path' in runner
+    assert '#ops == 99' in runner
+    assert 'ops[12] == 6' in runner
+    assert 'ops[68] == 44' in runner
+    assert 'return bit32.bxor(a, b)' in runner
