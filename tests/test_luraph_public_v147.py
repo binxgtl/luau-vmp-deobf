@@ -94,6 +94,7 @@ def test_generic_capture_accepts_parenthesized_factory_and_env_slot_26():
     assert candidate.slot == 50
     assert candidate.helper == 'S'
     assert candidate.opcode == 'H'
+    assert candidate.final_style == 'direct'
     assert candidate.final_match.group('environment') == '26'
 
     factory = generic_capture.extract_interpreter_factory(source)
@@ -107,6 +108,42 @@ def test_generic_capture_accepts_parenthesized_factory_and_env_slot_26():
     # Bootstrap parsing still runs. Only the final application constructor is
     # replaced, so the payload closure itself is never constructed or invoked.
     assert 'L = G[50](L, G[26])("bootstrap", G[50])' in patched
+
+
+def _wrapped_slot50_wrapper():
+    return '''
+local M = {}
+M[50] = function(Q, X, S)
+    local f, pc = {[1] = 1}, 1
+    return function()
+        while true do
+            local w = f[pc]
+            if w == 1 then return X end
+        end
+    end
+end
+local p = {[24] = {}}
+local J = {}
+J = p[50](J, p[24])("bootstrap", p[50])
+return {p[50](J, p[24])}, J, 124;
+'''
+
+
+def test_generic_capture_preserves_wrapped_return_shape():
+    source = _wrapped_slot50_wrapper()
+    candidate = generic_capture._select(source)
+    assert candidate is not None
+    assert candidate.slot == 50
+    assert candidate.helper == 'M'
+    assert candidate.opcode == 'w'
+    assert candidate.final_style == 'wrapped'
+    assert candidate.final_match.group('environment') == '24'
+
+    patched = generic_capture.instrument_vm_source(source)
+    assert 'return {__LUAUVMP_CAPTURE(p,J)}, J, 124;' in patched
+    assert 'return {p[50](J, p[24])}, J, 124;' not in patched
+    # The bootstrap constructor/call is intentionally retained.
+    assert 'J = p[50](J, p[24])("bootstrap", p[50])' in patched
 
 
 def _metadata_source():
