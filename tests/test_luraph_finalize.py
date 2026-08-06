@@ -56,6 +56,8 @@ def test_finalize_runner_uses_functional_closed_environment_and_diagnostics():
 def test_finalize_runner_replaces_only_exact_hot_helper_shapes():
     patched = instrument_final_vm_source(synthetic_vm())
     assert 'local __fast=__LUAUVMP_FASTPATH(W,P)' in patched
+    assert 'local __late=__LUAUVMP_FASTPATH(W,P)' in patched
+    assert 'if __late then q=__late;return __late(...) end' in patched
     runner = build_finalize_runner(
         patched, 'bc.bin', 'final.tsv', 'facts.tsv', 12345,
     )
