@@ -9,9 +9,13 @@ _LONG_BRACKET = re.compile(r"\[(=*)\[(.*?)\]\1\]", re.S)
 
 
 def extract_payloads(source):
-    """Return LPH blobs from any valid Lua long-bracket delimiter."""
-    return [match.group(2) for match in _LONG_BRACKET.finditer(source)
-            if match.group(2).startswith("LPH")]
+    """Return all Lua long-bracket strings in source order."""
+    return [match.group(2) for match in _LONG_BRACKET.finditer(source)]
+
+
+def _luraph_payloads(source):
+    return [payload for payload in extract_payloads(source)
+            if payload.startswith("LPH")]
 
 
 def detect(source):
@@ -20,14 +24,31 @@ def detect(source):
         return False
     if "52200625" not in source and "614125" not in source:
         return False
-    return len(extract_payloads(source)) >= 2
+    return len(_luraph_payloads(source)) >= 2
 
 
-# The original unpack() resolves these names from its module globals. Replacing
-# them here upgrades every existing caller, including corpus and legacy commands.
+def unpack(source):
+    """Unpack the two LPH streams while ignoring unrelated long strings."""
+    payloads = _luraph_payloads(source)
+    if len(payloads) < 2:
+        raise ValueError("expected two Luraph payloads, found %d" % len(payloads))
+    streams = []
+    for payload in payloads[:2]:
+        coded = _base.decode_base85(payload, drop=5)
+        try:
+            streams.append(_base.decompress(coded))
+        except (IndexError, ValueError):
+            streams.append(False)
+    vm, bytecode = streams
+    if vm is False or bytecode is False:
+        raise ValueError("Luraph stream decompression aborted (corrupt loader?)")
+    return vm, bytecode
+
+
+# Upgrade existing callers (legacy CLI and corpus module) after this facade is imported.
 _base.extract_payloads = extract_payloads
 _base.detect = detect
+_base.unpack = unpack
 
-unpack = _base.unpack
 decode_base85 = _base.decode_base85
 decompress = _base.decompress
