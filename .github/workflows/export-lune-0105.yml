@@ -1,0 +1,37 @@
+name: Export Lune 0.10.5
+
+on:
+  push:
+    branches: [debug/export-lune-0105]
+    paths:
+      - ".github/workflows/export-lune-0105.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download pinned binary
+        shell: bash
+        run: |
+          set -euxo pipefail
+          curl --fail --location --retry 3 \
+            "https://github.com/lune-org/lune/releases/download/v0.10.5/lune-0.10.5-linux-x86_64.zip" \
+            --output lune.zip
+          python - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('lune.zip') as zf:
+              zf.extractall('lune-bin')
+          PY
+          find lune-bin -type f -name lune -exec chmod +x {} \;
+          find lune-bin -type f -name lune -exec {} --version \;
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: lune-0.10.5-linux-x86_64
+          path: lune-bin/**/lune
+          if-no-files-found: error
+          retention-days: 1
