@@ -11,12 +11,15 @@ from .luraph_early_capture import instrument_vm_source as _instrument_vm_source
 
 _luraph_capture.instrument_vm_source = _instrument_vm_source
 
-# Public v14.7 corpus builds use a single Zstandard stream, helper slot 59 and a
-# post-bootstrap final constructor. Add that structural extractor while keeping
-# the legacy slot-50 instrumenter as the fallback path.
+# Public v14.7 corpus builds use randomized factory slots and, in one family, a
+# single Zstandard stream. Install the known slot-59 path first, then the generic
+# structural classifier that requires a matching final constructor for the same
+# slot. Both fall back to the legacy slot-50 instrumenter.
 from .luraph_public_v147 import install as _install_public_v147
+from .luraph_generic_capture import install as _install_generic_capture
 
 _install_public_v147()
+_install_generic_capture()
 
 # The Lune runner is generated through two string-literal layers. Correct the
 # capture TSV delimiters before any CLI or library caller builds the runner.
