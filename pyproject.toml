@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "luau-vmp-deobf"
-version = "0.3.4"
-description = "Static and sandbox-assisted devirtualizer for Luau custom bytecode VMs"
+version = "0.4.0"
+description = "Static and sandbox-assisted devirtualizer for Luau VM-protected scripts"
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
