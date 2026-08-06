@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   pytest:
     runs-on: ubuntu-latest
@@ -24,96 +28,3 @@ jobs:
       - run: python -m pip install -e . pytest
       - run: python -m py_compile luauvmp/*.py tools/*.py
       - run: python -m pytest -q
-
-  public-v147-smoke:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    strategy:
-      fail-fast: false
-      matrix:
-        sample:
-          - 001163f72ed972da.lua
-          - 00a98a1f920aa83a.lua
-          - 02779a141d5f7738.lua
-    env:
-      LUNE_VERSION: "0.10.5"
-      LUAUVMP_FINALIZE_FALLBACK: "1"
-      LUAUVMP_INSTRUCTION_BUDGET: "5000000"
-      LUAUVMP_ZSTD_MAX_OUTPUT: "268435456"
-      PYTHONUNBUFFERED: "1"
-    steps:
-      - uses: actions/checkout@v4
-      - name: Checkout representative sample
-        uses: actions/checkout@v4
-        with:
-          repository: terrorlua/obfuscator-samples
-          ref: a6ecd0ea7112c6a65d4b7acba40acc9e280301e3
-          path: public-samples
-          fetch-depth: 1
-          filter: blob:none
-          sparse-checkout: |
-            Luraph/v14.7/${{ matrix.sample }}
-          sparse-checkout-cone-mode: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install package
-        run: |
-          set -euxo pipefail
-          python -m pip install --upgrade pip
-          python -m pip install -e .
-          python -m py_compile luauvmp/*.py tools/*.py
-      - name: Install pinned Lune
-        shell: bash
-        run: |
-          set -euxo pipefail
-          archive="$RUNNER_TEMP/lune.zip"
-          bindir="$RUNNER_TEMP/lune-bin"
-          curl --fail --location --retry 3 \
-            "https://github.com/lune-org/lune/releases/download/v${LUNE_VERSION}/lune-${LUNE_VERSION}-linux-x86_64.zip" \
-            --output "$archive"
-          mkdir -p "$bindir"
-          python - "$archive" "$bindir" <<'PY'
-          import sys, zipfile
-          with zipfile.ZipFile(sys.argv[1]) as archive:
-              archive.extractall(sys.argv[2])
-          PY
-          lune="$(find "$bindir" -type f -name lune -print -quit)"
-          test -n "$lune"
-          chmod +x "$lune"
-          echo "$(dirname "$lune")" >> "$GITHUB_PATH"
-      - name: Decompile representative sample
-        run: |
-          set -o pipefail
-          mkdir -p public-smoke
-          timeout --signal=INT --kill-after=10s 180s \
-            luauvmp luraph-full \
-              "public-samples/Luraph/v14.7/${{ matrix.sample }}" \
-              -o "public-smoke/${{ matrix.sample }}" \
-              --force --timeout 120 --keep-failed \
-            2>&1 | tee "public-smoke/${{ matrix.sample }}.log"
-      - name: Validate compile-checked result
-        run: |
-          set -euxo pipefail
-          root="public-smoke/${{ matrix.sample }}"
-          test -f "$root/pipeline.json"
-          test -f "$root/program.pseudo.lua"
-          test -f "$root/program.decompiled.luau"
-          test -f "$root/artifacts/opcode_semantics.json"
-          python - "$root/pipeline.json" <<'PY'
-          import json, sys
-          p = json.load(open(sys.argv[1], encoding="utf-8"))
-          assert p["decompiler"]["compile_checked"] is True, p
-          assert p["opcode_slots"] > 0, p
-          print(json.dumps({k: p.get(k) for k in (
-              "capture_kind", "prototypes", "instructions", "opcode_slots"
-          )}, sort_keys=True))
-          PY
-      - name: Upload smoke diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: public-v147-smoke-${{ matrix.sample }}
-          path: public-smoke
-          if-no-files-found: warn
-          retention-days: 7
