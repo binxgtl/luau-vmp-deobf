@@ -13,17 +13,38 @@ def extract_payloads(source):
     return [match.group(2) for match in _LONG_BRACKET.finditer(source)]
 
 
+def _looks_like_luraph_stream(payload):
+    """Recognise one encoded stream without relying on loader-local constants.
+
+    Public v14.7 builds aggressively rewrite the surrounding decoder and may
+    remove the decimal multipliers used by older detection heuristics. The
+    stable format is the four-byte ``LPH?`` header followed by Ascii85 groups,
+    where ``z`` is the all-zero shorthand.
+    """
+    if len(payload) < 9 or not payload.startswith("LPH"):
+        return False
+    body = payload[4:]
+    for char in body:
+        code = ord(char)
+        if char != "z" and not 33 <= code <= 117:
+            return False
+    expanded_length = len(body) + body.count("z") * 4
+    return expanded_length >= 5 and expanded_length % 5 == 0
+
+
 def _luraph_payloads(source):
-    return [payload for payload in extract_payloads(source)
-            if payload.startswith("LPH")]
+    return [
+        payload for payload in extract_payloads(source)
+        if _looks_like_luraph_stream(payload)
+    ]
 
 
 def detect(source):
-    """Detect Luraph loaders even when the two blobs use different delimiters."""
-    if "LPH" not in source:
-        return False
-    if "52200625" not in source and "614125" not in source:
-        return False
+    """Detect v14.x loaders from their two stable encoded streams.
+
+    Do not require names, banners, arithmetic constants, or a particular long
+    bracket delimiter: all of those are routinely rewritten by Luraph builds.
+    """
     return len(_luraph_payloads(source)) >= 2
 
 
