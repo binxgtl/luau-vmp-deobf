@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Optional
 import json
+import re
 
 from . import luraph_capture
 from . import luraph_public_v147 as public
@@ -26,6 +27,18 @@ _LEGACY_NESTED = {
         21: "math.floor", 22: "bit32.bnot",
     }
 }
+
+# Some v14.7 families wrap the anonymous factory expression as
+# ``state[slot]=(function(...) ... end)``. The public slot-59 extractor keeps a
+# deliberately narrow pattern, while this structural fallback accepts exactly
+# one optional opening parenthesis before ``function`` and still relies on the
+# balanced tokenizer to locate the function's real end.
+_FACTORY_ASSIGN = re.compile(
+    r"(?:\(\s*)?(?P<helper>[A-Za-z_]\w*)(?:\s*\))?\s*\[\s*"
+    r"(?P<slot>" + public._NUMBER + r")\s*\]\s*=\s*\(?\s*"
+    r"(?P<function>function)\s*\(",
+    re.S,
+)
 
 
 @dataclass(frozen=True)
@@ -43,7 +56,10 @@ def _select(vm_source: str) -> Optional[Candidate]:
     for match in public._PUBLIC_FINAL_RETURN.finditer(vm_source):
         slot = public._integer(match.group("slot"))
         environment = public._integer(match.group("environment"))
-        if slot is not None and environment == 1:
+        # The environment slot is sample-local (observed values include 1 and
+        # 26). Safety comes from replacing the final constructor call itself,
+        # not from assuming a particular helper-table index.
+        if slot is not None and environment is not None:
             finals.append((slot, match))
     if not finals:
         return None
@@ -52,7 +68,7 @@ def _select(vm_source: str) -> Optional[Candidate]:
         final_by_slot.setdefault(slot, []).append(match)
 
     candidates = []
-    for match in public._FACTORY_ASSIGN.finditer(vm_source):
+    for match in _FACTORY_ASSIGN.finditer(vm_source):
         slot = public._integer(match.group("slot"))
         if slot not in final_by_slot:
             continue
