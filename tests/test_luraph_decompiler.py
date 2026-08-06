@@ -44,7 +44,7 @@ def test_render_compile_target_lifts_common_operations():
     assert metrics['fallback_instructions'] == 0
 
 
-def test_unknown_superinstruction_is_preserved_not_dropped(tmp_path):
+def test_unknown_superinstruction_is_preserved_as_compile_safe_data(tmp_path):
     proto = Proto(0, -1, -1, -1, 1, None, None, None, 2, [
         Instruction(0, 1, None, 200, None, 0, None, None, None),
     ])
@@ -54,7 +54,20 @@ def test_unknown_superinstruction_is_preserved_not_dropped(tmp_path):
         tmp_path,
     )
     text = (tmp_path / 'program.decompiled.luau').read_text()
-    assert 'm=(0);' in text
-    assert 'R[0]=O;' in text
+    assert 'do local __semantic_fallback = "m=(0); O=m+1; R[0]=O;" end' in text
+    assert '\n            m=(0);' not in text
     assert metrics['fallback_instructions'] == 1
     assert metrics['clean_instructions'] == 0
+
+
+def test_parenthesised_call_fallback_is_never_emitted_as_a_statement():
+    proto = Proto(0, -1, -1, -1, 1, None, None, None, 2, [
+        Instruction(0, 1, None, 201, None, 0, 1, None, None),
+    ])
+    source, metrics = render_program(
+        Program({0: proto}, 1),
+        {201: '(c[o[u]])(c[H[u]]);'},
+    )
+    assert 'do local __semantic_fallback = "(R[0])(R[1]);" end' in source
+    assert '\n            (R[0])' not in source
+    assert metrics['fallback_instructions'] == 1
