@@ -42,15 +42,15 @@ local function __LUAUVMP_FASTPATH(proto, cells)
         end
     end
 
-    -- Exact no-upvalue 104-instruction helper used as extract(value, first,
-    -- last), with one-based inclusive bit positions. The third argument is
-    -- optional and then selects a single bit.
+    -- Exact 104-instruction helper used as extract(value, first, last), with
+    -- one-based inclusive bit positions. Its constants include unreachable
+    -- anti-tamper material, so the opcode shape and no-cell marker are the
+    -- reliable identity here.
     if #ops == 104
         and ops[1] == 186 and ops[2] == 79 and ops[5] == 41
         and ops[8] == 128 and ops[9] == 135 and ops[10] == 35
         and ops[17] == 6 and ops[18] == 189 and ops[81] == 135
-        and ops[84] == 104 and ops[95] == 14 and ops[104] == 186
-        and type(constants) == "table" and next(constants) == nil
+        and ops[86] == 104 and ops[95] == 14 and ops[104] == 186
         and cells == false
     then
         __LUAUVMP_REPORT_FASTPATH("one-based bit extraction")
@@ -61,21 +61,18 @@ local function __LUAUVMP_FASTPATH(proto, cells)
         end
     end
 
-    -- Exact 33-instruction four-byte word helper. Preserve its captured
-    -- string-byte and XOR upvalues instead of assuming their identities.
+    -- Exact 33-instruction four-byte word helper. Upvalue cells are populated
+    -- lazily by the VM after closure construction, so read them at call time.
     if #ops == 33
         and ops[1] == 186 and ops[2] == 153 and ops[3] == 153
         and ops[6] == 43 and ops[10] == 93 and ops[11] == 98
         and ops[14] == 98 and ops[19] == 93 and ops[20] == 98
         and ops[27] == 93 and ops[31] == 93 and ops[33] == 14
         and type(cells) == "table"
-        and type(cells[0]) == "function"
-        and type(cells[1]) == "string" and #cells[1] == 8
-        and type(cells[2]) == "function"
     then
-        local byteRange, encoded, xor = cells[0], cells[1], cells[2]
         __LUAUVMP_REPORT_FASTPATH("four-byte word decode")
         return function()
+            local byteRange, encoded, xor = cells[0], cells[1], cells[2]
             local b1, b2, b3, b4 = byteRange(encoded, 1, 4)
             return xor(b4, 64) * 16777216
                 + xor(b3, 32) * 65536
@@ -85,7 +82,8 @@ local function __LUAUVMP_FASTPATH(proto, cells)
     end
 
     -- Exact 134-instruction IEEE-754 decoder. It reads low/high 32-bit words
-    -- through cells[0] and uses the one-based extractor in cells[1].
+    -- through cells[0] and uses the one-based extractor in cells[1]. These
+    -- cells are likewise bound lazily and must be dereferenced on invocation.
     if #ops == 134
         and ops[1] == 186 and ops[2] == 186 and ops[3] == 14
         and ops[6] == 128 and ops[7] == 135 and ops[8] == 127
@@ -96,14 +94,11 @@ local function __LUAUVMP_FASTPATH(proto, cells)
         and ops[91] == 46 and ops[103] == 153 and ops[105] == 174
         and ops[106] == 93 and ops[119] == 153 and ops[120] == 226
         and ops[121] == 153 and ops[124] == 226 and ops[126] == 153
-        and ops[134] == 186
-        and type(cells) == "table"
-        and type(cells[0]) == "function"
-        and type(cells[1]) == "function"
+        and ops[134] == 186 and type(cells) == "table"
     then
-        local readWord, extract = cells[0], cells[1]
         __LUAUVMP_REPORT_FASTPATH("IEEE-754 double decode")
         return function()
+            local readWord, extract = cells[0], cells[1]
             local low = readWord()
             local high = readWord()
             local mantissa = extract(high, 1, 20) * 4294967296 + low
