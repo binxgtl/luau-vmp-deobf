@@ -85,3 +85,15 @@ def test_lune_runner_uses_optimized_compile_and_reports_progress():
     assert 'status("running bytecode parser")' in runner
     assert 'status("capture callback entered")' in runner
     assert 'status("writing typed IR")' in runner
+
+
+def test_lune_runner_emits_real_tsv_escape_sequences():
+    runner = build_lune_runner('vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv')
+    assert r'}, "\t")' in runner
+    assert r'}, "\\t")' not in runner
+    assert r'table.concat(lines, "\n")' in runner
+    assert r'table.concat(lines, "\\n")' not in runner
+    assert r'"META\tprotos\t"' in runner
+    assert r'"META\\tprotos\\t"' not in runner
+    assert r'"[\r\n]"' in runner
+    assert r'"[\\r\\n]"' not in runner
