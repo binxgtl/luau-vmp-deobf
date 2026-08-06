@@ -8,6 +8,7 @@ on:
       - "luauvmp/**"
       - "tools/run_luraph_v147_corpus.py"
       - "tools/probe_luraph_v147_stream.py"
+      - "tools/probe_luraph_v147_structure.py"
       - "pyproject.toml"
 
 permissions:
@@ -70,6 +71,13 @@ jobs:
             public-samples/Luraph/v14.7 \
             --shard-index "${{ matrix.shard }}" \
             --shard-count 8
+
+      - name: Probe dispatcher and closure sites
+        run: |
+          set -euxo pipefail
+          sample="$(find public-samples/Luraph/v14.7 -maxdepth 1 -type f -name '*.lua' | sort | sed -n "$(( ${{ matrix.shard }} + 1 ))p")"
+          test -n "$sample"
+          python tools/probe_luraph_v147_structure.py "$sample"
 
       - name: Install pinned Lune
         shell: bash
