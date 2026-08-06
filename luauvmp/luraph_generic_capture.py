@@ -2,9 +2,9 @@
 
 Some public samples use the legacy two-stream container but randomize the
 factory slot, while others keep the interpreter in a single-stream wrapper.
-This layer identifies a factory only when the same numeric slot is both assigned
-an anonymous function containing a dispatcher loop and used by the final
-closure constructor. Ambiguous sources are rejected rather than guessed.
+This layer first delegates to the verified slot-50/slot-59 instrumenters. Only
+when they reject the source does it infer a factory from a matching function
+assignment, dispatcher loop, and final constructor for the same numeric slot.
 """
 from __future__ import annotations
 
@@ -26,7 +26,6 @@ _LEGACY_NESTED = {
         21: "math.floor", 22: "bit32.bnot",
     }
 }
-_VERIFIED_SLOTS = {50, 59}
 
 
 @dataclass(frozen=True)
@@ -44,7 +43,7 @@ def _select(vm_source: str) -> Optional[Candidate]:
     for match in public._PUBLIC_FINAL_RETURN.finditer(vm_source):
         slot = public._integer(match.group("slot"))
         environment = public._integer(match.group("environment"))
-        if slot is not None and slot not in _VERIFIED_SLOTS and environment == 1:
+        if slot is not None and environment == 1:
             finals.append((slot, match))
     if not finals:
         return None
@@ -95,12 +94,7 @@ def _select(vm_source: str) -> Optional[Candidate]:
     return candidates[0]
 
 
-def extract_interpreter_factory(vm_source: str) -> str:
-    candidate = _select(vm_source)
-    if candidate is None:
-        if _ORIGINAL_FACTORY is None:
-            raise luraph_capture.CaptureError("factory extractor is unavailable")
-        return _ORIGINAL_FACTORY(vm_source)
+def _render_factory(candidate: Candidate) -> str:
     marker = (
         "-- LUAUVMP_PUBLIC_V147=1\n"
         "-- LUAUVMP_FACTORY_SLOT=%d\n"
@@ -117,12 +111,33 @@ def extract_interpreter_factory(vm_source: str) -> str:
     return marker + "(" + candidate.function_source + ")"
 
 
+def extract_interpreter_factory(vm_source: str) -> str:
+    original_error = None
+    if _ORIGINAL_FACTORY is not None:
+        try:
+            return _ORIGINAL_FACTORY(vm_source)
+        except luraph_capture.CaptureError as exc:
+            original_error = exc
+    candidate = _select(vm_source)
+    if candidate is not None:
+        return _render_factory(candidate)
+    if original_error is not None:
+        raise original_error
+    raise luraph_capture.CaptureError("factory extractor is unavailable")
+
+
 def instrument_vm_source(vm_source: str) -> str:
+    original_error = None
+    if _ORIGINAL_INSTRUMENT is not None:
+        try:
+            return _ORIGINAL_INSTRUMENT(vm_source)
+        except luraph_capture.CaptureError as exc:
+            original_error = exc
     candidate = _select(vm_source)
     if candidate is None:
-        if _ORIGINAL_INSTRUMENT is None:
-            raise luraph_capture.CaptureError("VM instrumenter is unavailable")
-        return _ORIGINAL_INSTRUMENT(vm_source)
+        if original_error is not None:
+            raise original_error
+        raise luraph_capture.CaptureError("VM instrumenter is unavailable")
     match = candidate.final_match
     replacement = "return __LUAUVMP_CAPTURE(%s,%s);" % (
         match.group("state"), match.group("root")
