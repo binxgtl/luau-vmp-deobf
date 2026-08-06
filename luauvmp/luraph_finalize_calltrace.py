@@ -17,6 +17,10 @@ _TRACE_HELPERS = r'''-- Diagnostic wrapper for the four sample-local hot decoder
 __stepBudget = math.min(__stepBudget, 12000000)
 print("[finalize] diagnostic call trace step ceiling=" .. tostring(__stepBudget))
 local __hotCallCounts = {}
+local function __LUAUVMP_PACK(...)
+    return { n = select("#", ...), ... }
+end
+local __LUAUVMP_UNPACK = table.unpack or unpack
 local function __LUAUVMP_SAFE_VALUE(value, depth)
     local kind = type(value)
     if kind == "nil" then return "nil" end
@@ -60,31 +64,41 @@ local function __LUAUVMP_WRAP_HOT(proto, fn, cells)
     local fingerprint = __LUAUVMP_HOT_FINGERPRINT(proto)
     if fingerprint == nil then return fn end
     local protoId = __LUAUVMP_PROTO_ID(proto)
+    if type(fn) ~= "function" then
+        print("[finalize] call-trace skipped proto=" .. tostring(protoId)
+            .. " kind=" .. fingerprint .. " fn=" .. type(fn))
+        return fn
+    end
     local key = fingerprint .. "/" .. tostring(protoId)
     __hotCallCounts[key] = 0
     print("[finalize] call-trace enabled proto=" .. tostring(protoId)
         .. " kind=" .. fingerprint
+        .. " fn=" .. type(fn)
+        .. " unpack=" .. type(__LUAUVMP_UNPACK)
         .. " cells=" .. __LUAUVMP_SAFE_VALUE(cells, 0))
     return function(...)
-        local callNumber = __hotCallCounts[key] + 1
+        local callNumber = (__hotCallCounts[key] or 0) + 1
         __hotCallCounts[key] = callNumber
         local report = callNumber <= 6 or callNumber % 25000 == 0
         local arguments
         if report then
-            arguments = table.pack(...)
+            arguments = __LUAUVMP_PACK(...)
             print("[finalize] call proto=" .. tostring(protoId)
                 .. " kind=" .. fingerprint .. " n=" .. tostring(callNumber)
                 .. " args=" .. __LUAUVMP_PACK_SUMMARY(arguments)
                 .. " cells.before=" .. __LUAUVMP_SAFE_VALUE(cells, 0))
         end
-        local results = table.pack(fn(...))
+        local results = __LUAUVMP_PACK(fn(...))
         if report then
             print("[finalize] ret proto=" .. tostring(protoId)
                 .. " kind=" .. fingerprint .. " n=" .. tostring(callNumber)
                 .. " values=" .. __LUAUVMP_PACK_SUMMARY(results)
                 .. " cells.after=" .. __LUAUVMP_SAFE_VALUE(cells, 0))
         end
-        return table.unpack(results, 1, results.n)
+        if type(__LUAUVMP_UNPACK) ~= "function" then
+            error("diagnostic call tracer has no unpack function")
+        end
+        return __LUAUVMP_UNPACK(results, 1, results.n)
     end
 end
 
