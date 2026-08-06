@@ -22,4 +22,4 @@ classifiers = [
 luauvmp = "luauvmp.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["luauvmp*"]
+include = ["luauvmp*", "tools*"]
