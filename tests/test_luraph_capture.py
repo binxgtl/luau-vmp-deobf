@@ -63,7 +63,6 @@ def test_lune_runner_has_closed_capture_boundary():
     assert '@lune/net' not in runner
     assert 'require = require' not in runner
     assert 'process = process' not in runner
-    assert '@lune/roblox' not in runner
     assert 'game = game' not in runner
 
 
@@ -77,9 +76,13 @@ def test_lune_runner_supplies_bootstrap_compatibility_without_privileges():
     assert 'injectGlobals = false' in runner
     assert 'getupvalue' not in runner
     assert 'setupvalue' not in runner
-    # Public v14.7 constant parsing needs only this pure native value type.
-    assert 'Vector3 = Vector3' in runner
-    assert 'CFrame = CFrame' not in runner
+    # The trusted runner imports Lune's datatype table, but only Vector3 enters
+    # the recovered VM environment. The module and privileged APIs remain hidden.
+    assert 'local robloxDatatypes = require("@lune/roblox")' in runner
+    assert 'Vector3 = robloxDatatypes.Vector3' in runner
+    assert 'robloxDatatypes = robloxDatatypes' not in runner
+    assert 'Instance = robloxDatatypes.Instance' not in runner
+    assert 'CFrame = robloxDatatypes.CFrame' not in runner
 
 
 def test_lune_runner_uses_optimized_compile_and_reports_progress():
