@@ -110,6 +110,37 @@ jobs:
             --max-failures 1 \
             -o "corpus-results/${{ matrix.sample }}"
 
+      - name: Enforce fully-devirtualized quality gate
+        run: |
+          set -euxo pipefail
+          root="corpus-results/${{ matrix.sample }}/${{ matrix.sample%.lua }}"
+          python - "$root/pipeline.json" "$root/artifacts/opcode_semantics.json" <<'PY'
+          import json
+          import sys
+
+          pipeline = json.load(open(sys.argv[1], encoding="utf-8"))
+          semantics = json.load(open(sys.argv[2], encoding="utf-8"))
+          decompiler = pipeline.get("decompiler", {})
+          unknown_ifs = sum(
+              int(entry.get("unknown_ifs", 0))
+              for entry in semantics.values()
+              if isinstance(entry, dict)
+          )
+          quality = {
+              "compile_checked": decompiler.get("compile_checked") is True,
+              "fallback_instructions": int(decompiler.get("fallback_instructions", -1)),
+              "unknown_ifs": unknown_ifs,
+              "payload_executed": pipeline.get("payload_executed"),
+              "final_payload_executed": pipeline.get("final_payload_executed"),
+          }
+          print(json.dumps(quality, sort_keys=True))
+          assert quality["compile_checked"], quality
+          assert quality["fallback_instructions"] == 0, quality
+          assert quality["unknown_ifs"] == 0, quality
+          assert quality["payload_executed"] is False, quality
+          assert quality["final_payload_executed"] is False, quality
+          PY
+
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
