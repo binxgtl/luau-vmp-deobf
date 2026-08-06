@@ -4,6 +4,7 @@ import json
 import pytest
 
 from luauvmp import luraph_capture
+from luauvmp import luraph_generic_capture as generic_capture
 from luauvmp import luraph_public_v147 as public_capture
 from tools import recover_luraph_dispatch as legacy
 from tools import recover_luraph_dispatch_v147 as public_dispatch
@@ -63,6 +64,49 @@ def test_public_instrumentation_fails_closed_on_ambiguous_constructor():
     source = _wrapper() + '\n' + 'return l[59](k,l[1]);'
     with pytest.raises(luraph_capture.CaptureError, match='found 2'):
         public_capture.instrument_vm_source(source)
+
+
+def _parenthesized_slot50_wrapper():
+    return '''
+local S = {}
+S[50] = (function(j, L, T)
+    local q = {[1] = 1}
+    return function()
+        while true do
+            local H = q[1]
+            if H == 1 then
+                return L
+            end
+        end
+    end
+end)
+local G = {[26] = {}}
+local L = {}
+L = G[50](L, G[26])("bootstrap", G[50])
+return G[50](L, G[26]);
+'''
+
+
+def test_generic_capture_accepts_parenthesized_factory_and_env_slot_26():
+    source = _parenthesized_slot50_wrapper()
+    candidate = generic_capture._select(source)
+    assert candidate is not None
+    assert candidate.slot == 50
+    assert candidate.helper == 'S'
+    assert candidate.opcode == 'H'
+    assert candidate.final_match.group('environment') == '26'
+
+    factory = generic_capture.extract_interpreter_factory(source)
+    assert 'LUAUVMP_FACTORY_SLOT=50' in factory
+    assert 'LUAUVMP_HELPER_VAR=S' in factory
+    assert 'LUAUVMP_DISPATCH_VAR=H' in factory
+
+    patched = generic_capture.instrument_vm_source(source)
+    assert 'return __LUAUVMP_CAPTURE(G,L);' in patched
+    assert 'return G[50](L, G[26]);' not in patched
+    # Bootstrap parsing still runs. Only the final application constructor is
+    # replaced, so the payload closure itself is never constructed or invoked.
+    assert 'L = G[50](L, G[26])("bootstrap", G[50])' in patched
 
 
 def _metadata_source():
