@@ -45,6 +45,13 @@ from .luraph_finalize_bitops import install as _install_finalize_bitops
 
 _install_finalize_bitops()
 
+# Temporary private-fixture diagnostics for PR #15. Trace only primitive values,
+# string/table lengths and shallow numeric state; protected contents are never
+# printed. This module will be removed before merging a release fix.
+from .luraph_finalize_calltrace import install as _install_finalize_calltrace
+
+_install_finalize_calltrace()
+
 # Keep the public CLI/API stable while replacing the raw-loader workflow with
 # staged-tree detection, sandboxed bootstrap finalisation and exact source
 # extraction.
