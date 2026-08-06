@@ -1,5 +1,5 @@
 """luau-vmp-deobf - static deobfuscator for Luau VM-protected scripts."""
-__version__ = '0.5.0'
+__version__ = '0.5.1'
 
 from .spec import Spec           # noqa: F401
 from .analyse import analyse     # noqa: F401
@@ -30,6 +30,13 @@ _install_fallback_safety()
 from .luraph_runtime_fix import install as _install_runtime_fix
 
 _install_runtime_fix()
+
+# Version 0.5.0 used a no-op setfenv in the staged finaliser, which caused
+# environment-wrapper anti-tamper loops. Preserve real rebinding while keeping
+# every getfenv lookup inside the closed sandbox.
+from .luraph_finalize_compat import install as _install_finalize_compat
+
+_install_finalize_compat()
 
 # Keep the public CLI/API stable while replacing the raw-loader workflow with
 # staged-tree detection, sandboxed bootstrap finalisation and exact source
