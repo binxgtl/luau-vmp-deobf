@@ -7,6 +7,7 @@ on:
       - ".github/workflows/luraph-v147-public-corpus.yml"
       - "luauvmp/**"
       - "tools/run_luraph_v147_corpus.py"
+      - "tools/probe_luraph_v147_stream.py"
       - "pyproject.toml"
 
 permissions:
@@ -58,6 +59,14 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e .
           python -m py_compile luauvmp/*.py tools/*.py
+
+      - name: Fingerprint first single-stream sample
+        run: |
+          set -euxo pipefail
+          python tools/probe_luraph_v147_stream.py \
+            public-samples/Luraph/v14.7 \
+            --shard-index "${{ matrix.shard }}" \
+            --shard-count 8
 
       - name: Install pinned Lune
         shell: bash
