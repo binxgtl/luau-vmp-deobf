@@ -30,7 +30,7 @@ def test_final_instrumentation_keeps_bootstrap_and_blocks_final_payload():
     assert '__LUAUVMP_STEP(); local X=' in patched
 
 
-def test_finalize_runner_uses_lexical_sandbox_and_instruction_budget():
+def test_finalize_runner_uses_functional_closed_environment_and_diagnostics():
     patched = instrument_final_vm_source(synthetic_vm())
     runner = build_finalize_runner(
         patched, 'bc.bin', 'final.tsv', 'facts.tsv', 12345,
@@ -38,8 +38,15 @@ def test_finalize_runner_uses_lexical_sandbox_and_instruction_budget():
     assert 'local function __runVM(...)' in runner
     assert 'local __LUAUVMP_CAPTURE = capture' in runner
     assert 'local __stepBudget = 12345' in runner
+    assert '__LUAUVMP_STEP(u,X);' in runner
+    assert '[finalize] bootstrap steps=' in runner
+    assert 'last pc=' in runner
+    assert 'local __realSetfenv = setfenv' in runner
+    assert 'environment.getfenv = __closedGetfenv' in runner
+    assert 'local getfenv = __closedGetfenv' in runner
+    assert 'local setfenv = __closedSetfenv' in runner
+    assert 'function(fn, _env) return fn end' not in runner
     assert 'local require = nil' in runner
     assert 'local game, workspace, script, Instance = nil' in runner
-    assert 'local getfenv = function() return environment end' in runner
     assert 'luau.compile(vmSource' not in runner
     assert 'writeRuntimeFacts(runtimeState)' in runner
