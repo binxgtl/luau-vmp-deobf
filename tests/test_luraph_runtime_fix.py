@@ -1,0 +1,41 @@
+from pathlib import Path
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from luauvmp import luraph_capture
+from luauvmp.luraph_runtime_fix import validate_runtime_facts
+
+
+def test_runtime_facts_use_actual_helper_table_not_environment_slot():
+    runner = luraph_capture.build_lune_runner(
+        'vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv',
+    )
+    assert 'writeRuntimeFacts(runtimeState)' in runner
+    assert 'writeRuntimeFacts(runtimeState[1])' not in runner
+
+
+def test_empty_runtime_helper_capture_is_rejected(tmp_path):
+    path = tmp_path / 'facts.tsv'
+    path.write_text(
+        ''.join('%d\tnil\tnil\tfalse\t\n' % index for index in range(1, 65))
+    )
+    try:
+        validate_runtime_facts(path)
+    except luraph_capture.CaptureError as exc:
+        assert 'implausible' in str(exc)
+    else:
+        raise AssertionError('empty runtime helper facts were accepted')
+
+
+def test_plausible_runtime_helper_capture_is_accepted(tmp_path):
+    path = tmp_path / 'facts.tsv'
+    rows = []
+    for index in range(1, 65):
+        kind = 'function' if index <= 16 else 'nil'
+        rows.append('%d\t%s\t%s\t%s\t\n' % (
+            index, kind, kind, 'true' if kind == 'function' else 'false',
+        ))
+    path.write_text(''.join(rows))
+    validate_runtime_facts(path)

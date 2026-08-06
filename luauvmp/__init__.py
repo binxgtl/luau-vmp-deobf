@@ -1,5 +1,5 @@
 """luau-vmp-deobf - static deobfuscator for Luau VM-protected scripts."""
-__version__ = '0.4.1'
+__version__ = '0.5.0'
 
 from .spec import Spec           # noqa: F401
 from .analyse import analyse     # noqa: F401
@@ -23,3 +23,17 @@ _install_capture_format()
 from .luraph_fallback_safety import install as _install_fallback_safety
 
 _install_fallback_safety()
+
+# Versions <= 0.4.1 serialised runtimeState[1] (the payload environment) rather
+# than the Luraph helper table itself. Install the corrected runner and reject
+# empty helper captures before dispatcher recovery.
+from .luraph_runtime_fix import install as _install_runtime_fix
+
+_install_runtime_fix()
+
+# Keep the public CLI/API stable while replacing the raw-loader workflow with
+# staged-tree detection, sandboxed bootstrap finalisation and exact source
+# extraction.
+from .luraph_pipeline_v3 import install as _install_pipeline_v3
+
+_install_pipeline_v3()
