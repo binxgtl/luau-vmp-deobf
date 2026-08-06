@@ -94,8 +94,6 @@ jobs:
       - name: Run full Luraph pipeline
         id: pipeline
         shell: bash
-        env:
-          LUAUVMP_E2E_CALLTRACE: "1"
         run: |
           set -o pipefail
           rm -rf recovered recovered.partial-* e2e.log
@@ -104,7 +102,7 @@ jobs:
               -o recovered --force --timeout 1200 --keep-failed \
             2>&1 | tee e2e.log
 
-      - name: Validate expected final output
+      - name: Validate exact final output
         shell: bash
         run: |
           set -euxo pipefail
@@ -115,19 +113,34 @@ jobs:
           import hashlib
           import json
           from pathlib import Path
+
           root = Path("recovered")
           pipeline = json.loads((root / "pipeline.json").read_text(encoding="utf-8"))
           print(json.dumps(pipeline, indent=2, sort_keys=True))
-          source_files = sorted((root / "embedded_sources").glob("*.luau"))
+          if pipeline.get("final_payload_executed") is not False:
+              raise SystemExit("pipeline must record final_payload_executed=false")
+
           main = root / "embedded_main.luau"
-          print(f"embedded_main bytes={main.stat().st_size} sha256={hashlib.sha256(main.read_bytes()).hexdigest()}")
-          for path in source_files:
-              print(f"{path.name} bytes={path.stat().st_size} sha256={hashlib.sha256(path.read_bytes()).hexdigest()}")
-          expected_sizes = sorted([1018, 11999, 58546])
-          actual_sizes = sorted({main.stat().st_size, *(p.stat().st_size for p in source_files)})
-          missing = [size for size in expected_sizes if size not in actual_sizes]
-          if missing:
-              raise SystemExit(f"missing expected embedded source sizes: {missing}; got {actual_sizes}")
+          candidates = [main, *sorted((root / "embedded_sources").glob("*.luau"))]
+          observed = {}
+          for path in candidates:
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              size = path.stat().st_size
+              observed.setdefault(size, set()).add(digest)
+              print(f"{path} bytes={size} sha256={digest}")
+
+          expected = {
+              58546: "1af7c1795bb61cd19ef4185858a859e8f18d7cee45469d8d7c51d56e4e055e38",
+              11999: "8346985b668800d485453850de55126a61a43dbb2d2b61b37f5892f12a7dde24",
+              1018: "484ad027ed5ce949ac5fea1da688ad38e11f6cd2114c5cf08c5a8d79dee55163",
+          }
+          failures = {
+              size: {"expected": digest, "observed": sorted(observed.get(size, set()))}
+              for size, digest in expected.items()
+              if digest not in observed.get(size, set())
+          }
+          if failures:
+              raise SystemExit(f"exact embedded source validation failed: {failures}")
           PY
 
       - name: Preserve private diagnostics on sandbox
