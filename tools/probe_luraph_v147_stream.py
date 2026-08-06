@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from argparse import ArgumentParser
 from pathlib import Path
+from typing import Optional
 import hashlib
 import json
 import re
@@ -44,31 +45,47 @@ def _decoded_fingerprint(decoded: bytes) -> dict:
     }
 
 
-def _stream(payload: str, index: int) -> dict:
-    coded = luraph_loader.decode_base85(payload, drop=5)
+def _stream(payload: str, index: int, trim_length: Optional[int] = None) -> dict:
+    raw = luraph_loader.decode_base85(payload, drop=5)
+    coded = raw if trim_length is None else raw[:trim_length]
     record = {
         "index": index,
         "payload_chars": len(payload),
+        "raw_coded_bytes": len(raw),
         "coded_bytes": len(coded),
+        "trim_length": trim_length,
+        "trimmed_padding_bytes": len(raw) - len(coded),
         "coded_sha256": hashlib.sha256(coded).hexdigest(),
         "coded_prefix_hex": coded[:64].hex(),
         "zstd_magic": coded.startswith(b"\x28\xb5\x2f\xfd"),
     }
-    try:
-        legacy = luraph_loader.decompress(coded)
-    except Exception as exc:
-        record["legacy_error"] = "%s: %s" % (type(exc).__name__, exc)
+
+    # Never feed a known Zstandard frame to the custom range/LZ decoder. The
+    # legacy decoder is intentionally low-level and malformed foreign input can
+    # consume an unbounded amount of CPU before failing. Container selection in
+    # luraph_loader follows the same magic-first rule.
+    if record["zstd_magic"]:
+        record["legacy_skipped"] = "Zstandard magic"
     else:
-        if legacy is False:
-            record["legacy_error"] = "decoder returned False"
+        try:
+            legacy = luraph_loader.decompress(coded)
+        except Exception as exc:
+            record["legacy_error"] = "%s: %s" % (type(exc).__name__, exc)
         else:
-            record["legacy"] = _decoded_fingerprint(legacy)
-    try:
-        zstd = luraph_loader.decompress_zstd(coded)
-    except Exception as exc:
-        record["zstd_error"] = "%s: %s" % (type(exc).__name__, exc)
+            if legacy is False:
+                record["legacy_error"] = "decoder returned False"
+            else:
+                record["legacy"] = _decoded_fingerprint(legacy)
+
+    if not record["zstd_magic"]:
+        record["zstd_skipped"] = "missing Zstandard magic"
     else:
-        record["zstd"] = _decoded_fingerprint(zstd)
+        try:
+            zstd = luraph_loader.decompress_zstd(coded)
+        except Exception as exc:
+            record["zstd_error"] = "%s: %s" % (type(exc).__name__, exc)
+        else:
+            record["zstd"] = _decoded_fingerprint(zstd)
     return record
 
 
@@ -76,13 +93,19 @@ def fingerprint(path: Path) -> dict:
     source = path.read_text(encoding="utf-8", errors="surrogateescape")
     payloads = [payload for payload in luraph_loader.extract_payloads(source)
                 if payload.startswith("LPH")]
+    decoded = [luraph_loader.decode_base85(payload, drop=5)
+               for payload in payloads[:4]]
+    trims = luraph_loader._declared_trim_lengths(source, decoded)
     result = {
         "sample": path.name,
         "source_bytes": path.stat().st_size,
         "payloads": len(payloads),
         "detected": luraph_loader.detect(source),
-        "streams": [_stream(payload, index)
-                    for index, payload in enumerate(payloads[:4])],
+        "declared_trim_lengths": trims,
+        "streams": [
+            _stream(payload, index, trims[index] if trims is not None else None)
+            for index, payload in enumerate(payloads[:4])
+        ],
     }
     try:
         vm, bytecode = luraph_loader.unpack(source)
