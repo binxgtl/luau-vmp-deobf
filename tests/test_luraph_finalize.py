@@ -65,12 +65,17 @@ def test_finalize_runner_replaces_only_exact_hot_helper_shapes():
     assert 'ops[68] == 44' in runner
     assert 'return bit32.bxor(a, b)' in runner
     assert '#ops == 104' in runner
+    assert 'ops[86] == 104' in runner
     assert 'ops[95] == 14' in runner
     assert 'local finalBit = lastBit or firstBit' in runner
     assert 'math.floor(value / (2 ^ (firstBit - 1)))' in runner
     assert '#ops == 33' in runner
-    assert 'type(cells[1]) == "string" and #cells[1] == 8' in runner
+    assert 'local byteRange, encoded, xor = cells[0], cells[1], cells[2]' in runner
     assert 'local b1, b2, b3, b4 = byteRange(encoded, 1, 4)' in runner
+    assert '#ops == 134' in runner
+    assert 'local readWord, extract = cells[0], cells[1]' in runner
+    assert 'local mantissa = extract(high, 1, 20) * 4294967296 + low' in runner
+    assert 'local exponent = extract(high, 21, 31)' in runner
 
 
 def test_finalize_runner_keeps_expensive_calltrace_disabled_by_default():
