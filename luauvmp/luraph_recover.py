@@ -1,4 +1,4 @@
-"""Package facade for the sample-local Luraph dispatcher specializer."""
+"""Package facade for sample-local Luraph dispatcher specialization."""
 from __future__ import annotations
 
 from contextlib import redirect_stdout
@@ -7,7 +7,8 @@ from typing import Any, Tuple
 import io
 import json
 
-from tools import recover_luraph_dispatch as _impl
+from tools import recover_luraph_dispatch as _legacy
+from tools import recover_luraph_dispatch_v147 as _public
 
 
 def _load_runtime_facts(path: Path):
@@ -30,18 +31,27 @@ def _load_runtime_facts(path: Path):
                      if text.startswith("hex:") else text)
         else:
             value = ("obj", classes)
-        values[int(index)] = _impl.AVal(kind, value, classes, truth == "true")
+        values[int(index)] = _legacy.AVal(kind, value, classes, truth == "true")
     return values
 
 
 def recover_dispatch(factory, runtime_facts, output, text_output=None):
     """Recover all opcode semantics from one sample's extracted dispatcher."""
-    _impl.SRC = Path(factory)
-    _impl.A_TSV = Path(runtime_facts)
-    _impl.OUT_JSON = Path(output)
-    _impl.OUT_TXT = (Path(text_output) if text_output is not None
-                     else _impl.OUT_JSON.with_suffix(".txt"))
-    _impl.load_A = _load_runtime_facts
+    factory_path = Path(factory)
+    output_path = Path(output)
+    text_path = (Path(text_output) if text_output is not None
+                 else output_path.with_suffix(".txt"))
+    source = factory_path.read_text(encoding="utf-8", errors="surrogateescape")
+    values = _load_runtime_facts(Path(runtime_facts))
+
+    if "LUAUVMP_PUBLIC_V147=1" in source:
+        return _public.recover(factory_path, values, output_path, text_path)
+
+    _legacy.SRC = factory_path
+    _legacy.A_TSV = Path(runtime_facts)
+    _legacy.OUT_JSON = output_path
+    _legacy.OUT_TXT = text_path
+    _legacy.load_A = _load_runtime_facts
     with redirect_stdout(io.StringIO()):
-        _impl.main()
-    return json.loads(_impl.OUT_JSON.read_text(encoding="utf-8"))
+        _legacy.main()
+    return json.loads(output_path.read_text(encoding="utf-8"))
