@@ -92,13 +92,29 @@ The loader itself and the returned payload closure are not executed.
 The only dynamic step is the recovered VM's **bytecode parser**. Before Lune
 loads it, `luraph-full` replaces the one call that constructs the executable
 payload closure with a capture callback. The callback serialises prototypes and
-returns a disabled function. The loaded parser receives a restricted standard-
-library environment without `require`, filesystem, network, process, Roblox or
-executor APIs.
+returns a disabled function. The capture environment does not provide Roblox,
+executor or network APIs.
 
 Decoded artifacts can still contain secrets already present in the input. Do
 not publish raw output before checking for tokens, webhooks, cookies, hardware
 identifiers or private URLs.
+
+### Troubleshooting Lune compatibility
+
+Lune does not expose the Luau `debug` library by default. `luauvmp` 0.3.1 and
+newer inject a restricted `debug.info`/`debug.getinfo` compatibility surface
+and a sandboxed `loadstring` wrapper for the VM bootstrap. If an older checkout
+fails with `The debug library is required on Luau platforms`, update and
+reinstall before retrying:
+
+```bash
+git pull origin main
+python -m pip install -e .
+luauvmp luraph-full protected.lua -o recovered --force
+```
+
+The compatibility surface does not expose stack mutation, upvalue mutation,
+filesystem, network, process, Roblox, or executor APIs.
 
 ## Luraph artifact mode
 
