@@ -41,6 +41,19 @@ def install() -> None:
             'writeRuntimeFacts(runtimeState[1])',
             'writeRuntimeFacts(runtimeState)',
         )
+
+        # Vector3 is a pure Luau value type used by one public v14.7 parser
+        # during constant decoding. Forward only the native constructor already
+        # provided by Lune; no Roblox services, instances, filesystem or network
+        # capabilities are exposed to the recovered VM.
+        datatype_marker = '    utf8 = utf8,\n}'
+        datatype_environment = '    utf8 = utf8,\n    Vector3 = Vector3,\n}'
+        if datatype_marker not in runner:
+            raise luraph_capture.CaptureError(
+                "safe-capture datatype environment marker was not found"
+            )
+        runner = runner.replace(datatype_marker, datatype_environment, 1)
+
         marker = 'environment._G = environment\n\nlocal function safeLoadString'
         telemetry = r'''environment._G = environment
 setmetatable(environment, {
