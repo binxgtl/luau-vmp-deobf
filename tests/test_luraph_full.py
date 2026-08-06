@@ -1,10 +1,11 @@
 from pathlib import Path
+import json
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from luauvmp.luraph_full import (
-    ProtoRef, decode_typed, parse_full_ir,
+    ProtoRef, decode_typed, parse_full_ir, load_semantics,
     substitute_semantics, Instruction, render_value,
 )
 from luauvmp.luraph_dispatch import validate_semantics
@@ -43,8 +44,36 @@ def test_operand_substitution():
 
 
 def test_validate_complete_map():
-    validate_semantics({i: '' for i in range(256)})
+    m = {i: '' for i in range(256)}
+    validate_semantics(m)
 
 
 def test_binary_string_quote():
     assert render_value('a\x00b') == '"a\\000b"'
+
+
+def test_write_program_bundle_default(tmp_path):
+    from luauvmp.luraph_full import Program, Proto, write_program
+    proto = Proto(0, -1, -1, -1, 2, None, None, None, 2, [
+        Instruction(0, 1, 'hello', 1, 0, 1, None, None, None),
+        Instruction(0, 2, None, 1, 1, 2, None, None, None),
+    ])
+    manifest = write_program(Program({0: proto}, 1), {1: 'c[p[u]]=E[u]'}, tmp_path)
+    assert manifest['format_version'] == 2
+    assert manifest['output_mode'] == 'bundle'
+    assert (tmp_path / 'program.pseudo.lua').exists()
+    assert not (tmp_path / 'protos').exists()
+    text = (tmp_path / 'program.pseudo.lua').read_text()
+    assert '"hello"' in text
+    assert 'R[0]' in text
+
+
+def test_write_program_split_is_opt_in(tmp_path):
+    from luauvmp.luraph_full import Program, Proto, write_program
+    proto = Proto(0, -1, -1, -1, 1, None, None, None, 1, [
+        Instruction(0, 1, 7, 1, 0, None, None, None, None),
+    ])
+    manifest = write_program(Program({0: proto}, 1), {1: 'c[p[u]]=E[u]'},
+                             tmp_path, split_protos=True)
+    assert manifest['output_mode'] == 'bundle+split'
+    assert (tmp_path / 'protos' / 'proto_0000.pseudo.lua').exists()
