@@ -31,18 +31,57 @@ _STEP_BLOCK = re.compile(
 )
 _NEW_STEP = '''local __stepCount = 0
 local __stepBudget = %d
-local __lastPc, __lastOpcode = nil, nil
-local function __LUAUVMP_STEP(pc, opcode)
+local __lastProto, __lastPc, __lastOpcode = nil, nil, nil
+local __protoStepCounts = {}
+local function __LUAUVMP_PROTO_ID(proto)
+    local id = protoIds[proto]
+    if id == nil then
+        id = registerProto(proto, -3, -3, -3)
+    end
+    return id
+end
+local function __LUAUVMP_TOP_PROTOS(limit)
+    local rows = {}
+    for id, count in __protoStepCounts do
+        rows[#rows + 1] = { id, count }
+    end
+    table.sort(rows, function(a, b)
+        if a[2] == b[2] then return a[1] < b[1] end
+        return a[2] > b[2]
+    end)
+    local parts = {}
+    local stop = math.min(limit, #rows)
+    for index = 1, stop do
+        local id, count = rows[index][1], rows[index][2]
+        local proto = protoList[id + 1]
+        local ops = type(proto) == "table" and proto[4] or nil
+        local opCount = type(ops) == "table" and #ops or -1
+        local first = type(ops) == "table" and ops[1] or nil
+        local middle = type(ops) == "table" and ops[math.max(1, math.floor(opCount / 2))] or nil
+        local last = type(ops) == "table" and ops[opCount] or nil
+        parts[#parts + 1] = tostring(id) .. ":" .. tostring(count)
+            .. "/len=" .. tostring(opCount)
+            .. "/sig=" .. tostring(first) .. "," .. tostring(middle) .. "," .. tostring(last)
+    end
+    return table.concat(parts, ";")
+end
+local function __LUAUVMP_STEP(proto, pc, opcode)
     __stepCount += 1
-    __lastPc, __lastOpcode = pc, opcode
+    local protoId = __LUAUVMP_PROTO_ID(proto)
+    __protoStepCounts[protoId] = (__protoStepCounts[protoId] or 0) + 1
+    __lastProto, __lastPc, __lastOpcode = protoId, pc, opcode
     if __stepCount %% 1000000 == 0 then
         print("[finalize] bootstrap steps=" .. tostring(__stepCount)
-            .. " pc=" .. tostring(pc) .. " opcode=" .. tostring(opcode))
+            .. " proto=" .. tostring(protoId)
+            .. " pc=" .. tostring(pc) .. " opcode=" .. tostring(opcode)
+            .. " top=" .. __LUAUVMP_TOP_PROTOS(5))
     end
     if __stepCount > __stepBudget then
         error("Luraph bootstrap instruction budget exceeded: " .. tostring(__stepBudget)
-            .. " (last pc=" .. tostring(__lastPc)
-            .. ", opcode=" .. tostring(__lastOpcode) .. ")")
+            .. " (last proto=" .. tostring(__lastProto)
+            .. ", pc=" .. tostring(__lastPc)
+            .. ", opcode=" .. tostring(__lastOpcode)
+            .. "; top=" .. __LUAUVMP_TOP_PROTOS(10) .. ")")
     end
 end
 '''
@@ -81,7 +120,7 @@ def install() -> None:
         runner = original(*args, **kwargs)
         runner, fetch_count = _GUARDED_FETCH.subn(
             lambda match: (
-                "while true do local X=%s; __LUAUVMP_STEP(u,X);" %
+                "while true do local X=%s; __LUAUVMP_STEP(W,u,X);" %
                 match.group("fetch")
             ),
             runner,
