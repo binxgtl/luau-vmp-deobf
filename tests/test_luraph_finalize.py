@@ -66,15 +66,11 @@ def test_finalize_runner_replaces_exact_hot_xor_helper_only():
     assert 'return bit32.bxor(a, b)' in runner
 
 
-def test_finalize_runner_traces_hot_calls_without_replacing_closures():
+def test_finalize_runner_keeps_expensive_calltrace_disabled_by_default():
     patched = instrument_final_vm_source(synthetic_vm())
     runner = build_finalize_runner(
         patched, 'bc.bin', 'final.tsv', 'facts.tsv', 12345,
     )
-    assert 'local function __LUAUVMP_HOT_ENTER(proto, cells, ...)' in runner
-    assert 'q=(function(...)__LUAUVMP_HOT_ENTER(W,P,...);local u=1;' in runner
-    assert 'return q;end);' in runner
-    assert '__LUAUVMP_WRAP_HOT' not in runner
-    assert 'string#' in runner
-    assert '__LUAUVMP_PACK_SUMMARY' in runner
-    assert '[finalize] enter proto=' in runner
+    assert 'diagnostic call trace step ceiling=' not in runner
+    assert '__LUAUVMP_HOT_ENTER' not in runner
+    assert '__LUAUVMP_PACK_SUMMARY' not in runner
