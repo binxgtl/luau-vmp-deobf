@@ -70,11 +70,23 @@ def install() -> None:
             )
         runner = runner.replace(datatype_marker, datatype_environment, 1)
 
+        # Never perform async I/O from the environment __index metamethod. Lune
+        # standard-library writes can yield, which previously replaced the real
+        # missing-global error with "yield across metamethod". Record names in a
+        # plain table and report them after the parser call has unwound.
+        environment_marker = 'local environment = {'
+        environment_prefix = 'local missingSafeGlobals = {}\nlocal environment = {'
+        if environment_marker not in runner:
+            raise luraph_capture.CaptureError(
+                "safe-capture environment declaration was not found"
+            )
+        runner = runner.replace(environment_marker, environment_prefix, 1)
+
         marker = 'environment._G = environment\n\nlocal function safeLoadString'
         telemetry = r'''environment._G = environment
 setmetatable(environment, {
     __index = function(_, key)
-        status("missing safe-capture global: " .. tostring(key))
+        missingSafeGlobals[tostring(key)] = true
         return nil
     end,
 })
@@ -85,6 +97,29 @@ local function safeLoadString'''
                 "safe-capture environment marker was not found"
             )
         runner = runner.replace(marker, telemetry, 1)
+
+        call_marker = (
+            'chunk(buffer.fromstring(bytecode))\n'
+            'status("VM parser returned")'
+        )
+        guarded_call = r'''local parserOk, parserResult = pcall(chunk, buffer.fromstring(bytecode))
+local missingNames = {}
+for key in missingSafeGlobals do
+    missingNames[#missingNames + 1] = key
+end
+table.sort(missingNames)
+if #missingNames > 0 then
+    status("missing safe-capture globals: " .. table.concat(missingNames, ", "))
+end
+if not parserOk then
+    error(parserResult, 0)
+end
+status("VM parser returned")'''
+        if call_marker not in runner:
+            raise luraph_capture.CaptureError(
+                "safe-capture parser invocation marker was not found"
+            )
+        runner = runner.replace(call_marker, guarded_call, 1)
         return runner
 
     original_run = luraph_capture.run_capture
