@@ -1,281 +1,199 @@
 # luau-vmp-deobf
 
-Static deobfuscator for Luau scripts protected by a **custom bytecode VM**
-(base64 → LZSS → re-serialised Luau bytecode, executed by a control-flow-flattened
-interpreter written in Luau itself).
+Static and sandbox-assisted devirtualisation for Luau scripts protected by
+custom bytecode VMs, including **Luraph v14.x**.
 
-It never runs the sample. Everything is recovered by reading the loader:
-
-```
-loader.lua ──▶ fold arithmetic noise
-           ──▶ decrypt XOR'd string literals
-           ──▶ resolve the flattener's lazy jump tables
-           ──▶ deflatten the dispatch loops
-           ──▶ derive the VM spec (keys, fields, opcode map, mutation rules)
-           ──▶ base64 + LZSS the payload
-           ──▶ deserialise the proto tree
-           ──▶ devirtualise (opcode mutation + lazy string decryption)
-           ──▶ disassemble / decompile
-```
-
-Nothing about the VM is hard-coded. The protector re-rolls its keys, opcode
-numbering, field layout and identifiers on every build, so the tool derives all
-of it from the sample and tells you what it could not prove.
+The project derives VM details from each input instead of assuming one global
+opcode map. Luraph builds can randomise identifiers, dispatcher branches,
+operands, constants and opcode numbers independently, so the full pipeline
+recovers semantics from the VM embedded in the same sample.
 
 ## Install
 
-Python 3.9+, no dependencies.
+Requirements:
+
+- Python 3.9+
+- [Lune](https://lune-org.github.io/docs/getting-started/1-installation/) on
+  `PATH` for the one-command Luraph pipeline
 
 ```bash
-git clone https://github.com/binxgtl/luau-vmp-deobf
+git clone https://github.com/binxgtl/luau-vmp-deobf.git
 cd luau-vmp-deobf
-pip install -e .
+python -m pip install -e .
 ```
 
-## Use
+Check both commands:
 
 ```bash
-luauvmp deobf sample.txt --disasm --strings -v
+luauvmp --help
+lune --version
 ```
 
-Writes `sample.deobf.lua`, plus optionally an annotated disassembly, the
-recovered string table and the VM spec as JSON.
-
-Inspect what was recovered without decompiling:
+## Luraph: one command
 
 ```bash
-luauvmp inspect sample.txt --handlers --normalised
+luauvmp luraph-full protected.lua -o recovered
 ```
 
-`--handlers` dumps every opcode handler in canonical form. Anything the
-signature database does not recognise is printed as `<UNIDENTIFIED>` — paste it
-into `luauvmp/signatures.py` (or send a PR) and the opcode is supported.
+That single command performs the complete instruction-level pipeline:
 
-Only unpack the raw bytecode:
+```text
+protected.lua
+  -> static base85/range-code unpack
+  -> recovered interpreter + custom bytecode
+  -> patch payload-closure construction
+  -> safe prototype capture under Lune
+  -> recover runtime helper facts
+  -> specialise this sample's dispatcher
+  -> validate every opcode used by every prototype
+  -> emit one dispatcher-free pseudo-Luau bundle
+```
+
+Useful options:
 
 ```bash
-luauvmp unpack sample.txt
+luauvmp luraph-full protected.lua -o recovered --force
+luauvmp luraph-full protected.lua -o recovered --runtime /path/to/lune
+luauvmp luraph-full protected.lua -o recovered --timeout 600
+luauvmp luraph-full protected.lua -o recovered --split-protos
 ```
 
-If auto-analysis misses something on a new build, pin it by hand:
+`--split-protos` additionally writes one file per prototype. The default is a
+single streaming bundle because large samples may contain more than one
+thousand functions.
+
+### Output
+
+```text
+recovered/
+├── program.pseudo.lua
+├── manifest.json
+├── pipeline.json
+├── all_protos.index.txt
+└── artifacts/
+    ├── interpreter.vm.luau
+    ├── interpreter.capture.luau
+    ├── interpreter.factory.luau
+    ├── bytecode.bin
+    ├── full_ir.tsv
+    ├── runtime_A.tsv
+    ├── opcode_semantics.json
+    ├── opcode_semantics.txt
+    └── capture_runner.luau
+```
+
+`pipeline.json` records prototype/instruction counts, opcode coverage, elapsed
+time and `payload_executed: false`.
+
+### Safety boundary
+
+The loader itself and the returned payload closure are not executed.
+
+The only dynamic step is the recovered VM's **bytecode parser**. Before Lune
+loads it, `luraph-full` replaces the one call that constructs the executable
+payload closure with a capture callback. The callback serialises prototypes and
+returns a disabled function. The loaded parser receives a restricted standard-
+library environment without `require`, filesystem, network, process, Roblox or
+executor APIs.
+
+Decoded artifacts can still contain secrets already present in the input. Do
+not publish raw output before checking for tokens, webhooks, cookies, hardware
+identifiers or private URLs.
+
+## Luraph artifact mode
+
+The v0.2 workflow remains available for debugging or externally captured data:
 
 ```bash
-luauvmp deobf sample.txt --profile profiles/foxname-2026-07.json
+luauvmp luraph-full full_ir.tsv opcode_semantics.json -o recovered
 ```
 
-A profile is a partial `Spec` merged over auto-analysis, so you only list the
-fields that need overriding.
-
-## Luraph v14.x support
-
-`luauvmp` can also unpack **Luraph v14.7** loaders (and other builds that share
-the same base85 + range-coder scheme).  Luraph does not wrap Luau bytecode the
-way luau-vmp does; it compiles the script into its own custom VM bytecode, so
-the goal of this stage is recovery of the two streams the loader builds at
-runtime:
-
-```
-loader.lua -> base85 decode (5 chars -> 4 bytes, "z" zero-runs)
-           -> adaptive range coder + LZ77 decompress
-           -> [0] VM interpreter source (loadstring'ed, ~94 KB)
-           -> [1] custom VM bytecode blob (handed to the interpreter)
-```
-
-```
-$ luauvmp luraph protected.lua
-wrote protected.vm.lua      (Luraph VM interpreter source)
-wrote protected.bytecode.bin (Luraph VM bytecode)
-```
-
-`luauvmp unpack` detects Luraph loaders automatically, and `deobf`/`inspect`
-will tell you when a file is a Luraph (rather than luau-vmp) target.  The
-recovered interpreter is still obfuscated (state-machine handlers + arithmetic
-noise); the two stages below devirtualise that interpreter and trace it at
-runtime, so the loader's real behaviour is readable without executing the
-payload.
-
-### Detection
-
-* `LPH` magic + the base85 constants (`*52200625`, `*614125`) in the header
-* two `[==[ ... ]==]` payload literals (small interpreter, big bytecode)
-
-### Devirtualising the recovered dump (stages 2-4)
-
-Once the interpreter is running (in a Luau runtime such as `lune`) with its
-debug hooks enabled, it can dump each proto as plain text - one instruction per
-line, plus the string table:
-
-```
-$ luauvmp luraph-devirt proto_dump_39.txt strings_dump_39.txt
-wrote proto_dump_39.devirt.dis   (stage 2 - 1001 instructions, annotated)
-wrote proto_dump_39.pseudo.lua   (stage 3 - CONFIG table + statement trace)
-wrote proto_dump_39.flow.lua     (stage 4 - basic blocks + control-flow edges)
-```
-
-Stage 2 maps every custom opcode back to a Luau semantic using the dispatcher
-table recovered from v14.7.  Stage 3 runs a symbolic pass (register alias
-chasing, `R[14]` CONFIG reconstruction, global/member chain tracking) and emits
-the loader as readable pseudo-source.  Stage 4 lays the instructions out as
-basic blocks, folds arithmetic chains into expressions and lists the twelve
-conditional edges (`TEST` / `EQ?`) recovered from the VM - so the loader's
-real structure (deobf-helper loops, conditionally-built config entries) is
-visible without executing it.
-
-```
-$ luauvmp luraph protected.lua          # stage 1: unpack loader
-$ lune dump_proto.lua                   # run VM with hooks -> proto dump + strings
-$ luauvmp luraph-devirt proto_dump.txt strings_dump.txt   # stages 2-4
-```
-
-### Tracing the recovered VM (stage 5)
-
-`tools/luraph_trace.lua` runs the recovered interpreter under Lune with an
-auto-stubbing Roblox env and logs every global it touches:
+Individual stages are also available:
 
 ```bash
-lune run tools/luraph_trace.lua final.vm.lua final.bytecode.bin trace.log
+# Static unpack only
+luauvmp luraph protected.lua -o stage1
+
+# Recover dispatcher semantics manually
+python tools/recover_luraph_dispatch.py \
+  interpreter.factory.luau runtime_A.tsv \
+  -o opcode_semantics.json
 ```
 
-On the reference v14.7 sample the VM compiles, touches `table`/`bit32`/
-`string`/`buffer`/`coroutine`, then aborts with
-`attempt to yield across metamethod/C-call boundary` - the executor/anti-tamper
-layer refusing a non-Roblox host.  See `docs/luraph-stage5.md`.
+## Corpus regression
 
-## MoonVeil, and other staged loaders
-
-Some builds - *MoonVeil v1.4.5* among them - do not put the script in the file at
-all.  Run the tool normally first:
+Safely unpack and fingerprint a directory without running recovered VM source:
 
 ```bash
-luauvmp deobf sample.txt -v
+luauvmp luraph-corpus samples/Luraph/v14.7 \
+  -o luraph-corpus.json --strict
 ```
 
-If the decompiled output is only a handful of lines and looks like this, the
-payload is staged:
+The corpus manifest groups structurally similar interpreter builds while still
+recording their exact hashes and unpack failures.
 
-```lua
-local v1 = up1(<blob>)                       -- load the key proto
-local v3 = up0(v1, {})
-local v4 = up1(up2(<big blob>, "<key>", up3(v3())))   -- load the real script
-return up0(v4, {})(...)
-```
+## Other custom Luau VMs
 
-The container, the opcodes and this stub all come out of the file, but the second
-image is decrypted with a value the stub computes while running, so it is not in
-the file to be found.
-
-### Capturing the second image without running the script
-
-You do not have to execute the payload to get it - only the stub.  Hook the
-loader (the local the tail call hands the payload to, `y` below), count the
-calls, and on the one that receives the second image write it out and return an
-empty function.  Insert this at the `y = <loader>` assignment near the end of the
-file:
-
-```lua
-y = gc                                  -- the loader, as the file already had it
-do
-    local real, n = y, 0
-    y = function(bc, env)
-        n = n + 1
-        if n >= 3 then                  -- 1: outer payload, 2: key proto
-            writefile("stage2.b64", base64_encode(bc))
-            return function() end       -- captured; never executed
-        end
-        return real(bc, env)
-    end
-end
-```
-
-Run the patched file in any Luau executor.  Nothing from the second image runs:
-the stub loads it, receives an empty function, calls it, and stops.  Check the
-call sizes if you want to be sure - on the reference sample they were 136 534,
-2 754 and 128 231 bytes.
-
-### Decoding the capture
-
-The captured image is an ordinary container, so hand it back with `--image`.  The
-VM spec still comes from the loader; only the bytecode comes from the capture.
-Raw or base64 both work:
+For the original base64/LZSS custom-VM pipeline:
 
 ```bash
-luauvmp deobf sample.txt --image stage2.b64 --strings -v
+luauvmp deobf sample.lua --disasm --strings --spec -v
+luauvmp inspect sample.lua --handlers --normalised
+luauvmp unpack sample.lua
 ```
 
-On the reference sample that produced 128 231 bytes parsed byte-exact, 287
-protos and ~3 900 lines of Lua with no unknown opcodes.
+For staged images captured separately:
 
-## What gets recovered
+```bash
+luauvmp deobf sample.lua --image stage2.bin --strings -v
+```
 
-| Layer | Recovered by |
-|---|---|
-| Arithmetic constant noise (`12958+-12788`) | `prelude.fold_arith` |
-| XOR'd string literals | `prelude.decrypt_strings` — the helper is found by call-site fingerprint |
-| Control-flow flattening | `prelude.resolve_states` + `deflatten` — the memoised `T[k] = bxor(a,K1) - bxor(b,K2)` jump tables are evaluated statically |
-| Dispatch loop shape (`while ... do` or `repeat ... until`) | `deflatten.loop_offsets` |
-| Payload decode chain — base64 alone, or base64 + LZSS | `prelude.payload_pipeline` |
-| String helper declared inline or pre-declared | `prelude.find_string_helper` |
-| Byte / varint / instruction-word XOR keys | `analyse.analyse_reader` |
-| Instruction field slots (A, B, C, D, E, aux, K, KC, K1, K2, KN, kmode, opcode) | `analyse.analyse_reader` |
-| Operand layout codes (ABC / AD / AE) | `analyse._type_codes` |
-| Constant type codes — nil, int, double, string, boolean, table | `analyse._classify_consts` |
-| Constant-mode codes (all ten) | `analyse._kmode_codes` |
-| Opcode numbering | `analyse.analyse_vm` — handler fingerprinting against `signatures.py` |
-| Per-handler XOR masks (CALL, LOADN, NEWCLOSURE) | fingerprint by-product |
-| Operand roles, when a build shuffles which slot is dest/src | signature field order, zipped against the reference build |
-| Self-modifying instruction rules | `mutations.extract` (path-sensitive) |
-| Lazy per-string / per-import decryption | `devirt.decrypt_strings` |
-| Heap-boxed upvalues | `decompile` (`bN --[[byref]]`) |
+## What “full” means
 
-## Tested on
+For Luraph, “full” means:
 
-| Sample | Loader | Bytecode | Protos | Result |
-|---|---|---|---|---|
-| build A | 101 KB | 35 KB (100% parsed) | 65 | 1 155 lines, every opcode identified |
-| build B | 240 KB | 193 KB (100% parsed) | 700+ | 7 800 lines, every opcode identified |
-| build C | 253 KB | 137 KB (100% parsed) | 1 | staged loader, first stage recovered in full |
-| build C stage 2 | - | 128 KB (100% parsed) | 287 | 3 900 lines, every opcode identified |
+- the complete captured prototype tree is processed;
+- opcode semantics come from the same sample's dispatcher;
+- every opcode used by the capture must have a recovered semantic;
+- custom instructions are replaced with dispatcher-free pseudo-Luau;
+- incomplete maps fail before a valid-looking output is written.
 
-Build C is a *MoonVeil v1.4.5* build and stages its payload: the bytecode in the
-file is a 28-instruction stub that decrypts a second image and feeds it back to
-the same loader.  The second image is keyed on a value the stub computes at run
-time, so it cannot be decrypted from the file alone - but it only takes hooking
-the loader to capture it *without executing it*, after which this tool decodes it
-like any other container.  `docs/format.md` has the hook.
+It does **not** mean byte-identical recovery of the original source. Compilation
+can destroy local names, comments, formatting and the exact choice between
+semantically equivalent control-flow constructs. Code fetched from a remote
+server is not present in the loader and cannot be recovered from that loader
+alone.
 
-The two builds share no keys, no opcode numbers, no field slots, no constant
-type codes and not even the same dispatch loop shape — everything was derived
-per sample.  Build B additionally uses boolean and empty-table constants and a
-`repeat ... until` dispatch loop, both of which the analyser picks up on its own.
+## Validation scale
 
-## Output quality
+The streaming writer has been regression-tested at the large reference scale:
 
-The decompiler reconstructs strings, imports, control flow, method calls, table
-constructors and closures.
+- 1,204 prototypes
+- 127,505 custom instructions
+- all 256 opcode slots represented
+- approximately 11 MB of generated pseudo-Luau
 
-It is a *readable* reconstruction, not a byte-exact recompile: registers become
-`vN` temporaries, and a handful of register-phi patterns are materialised as
-explicit locals. Anything it cannot model is left as a comment rather than
-silently guessed.
+No protected sample or decoded payload is bundled in this repository.
 
-## Adding support for a new build
+## Development
 
-1. `luauvmp inspect sample.txt --handlers -v`
-2. Check the `UNRESOLVED` line — if empty, the container format was fully derived.
-3. For each `<UNIDENTIFIED>` handler, read the canonical form, decide which Luau
-   operation it is, and add `signature: 'NAME'` to `luauvmp/signatures.py`.
-   `tools/gen_signatures.py` regenerates the file from a labelled sample.
-4. Re-run `deobf`.
+```bash
+python -m pytest -q
+```
+
+When adding a new Luraph family, preserve these invariants:
+
+1. never call the returned payload closure;
+2. recover dispatcher semantics from the same sample;
+3. reject missing opcode semantics;
+4. keep the instruction-level bundle as the auditable ground truth;
+5. add a minimized regression fixture rather than a real protected payload.
 
 ## Scope and intent
 
-This is an analysis tool: it exists to make it possible to read what an
-obfuscated script actually does before running it. The protector this targets is
-routinely used to hide credential-harvesting, telemetry and remote-execution
-channels inside otherwise ordinary game scripts.
+This is an analysis tool for reading unfamiliar protected code before deciding
+whether it is safe to run. Only analyse files you are authorised to inspect.
 
-No sample is bundled. Point the tool at a file you already have.
-
-## Licence
+## License
 
 MIT — see `LICENSE`.
