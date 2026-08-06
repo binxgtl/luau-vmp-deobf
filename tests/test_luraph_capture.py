@@ -50,3 +50,15 @@ def test_lune_runner_has_closed_capture_boundary():
     assert 'require = require' not in runner
     assert 'process = process' not in runner
     assert '@lune/roblox' not in runner
+
+
+def test_lune_runner_supplies_bootstrap_compatibility_without_privileges():
+    runner = build_lune_runner('vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv')
+    assert 'debug = debugCompat' in runner
+    assert 'info = debugInfo' in runner
+    assert 'environment.loadstring = safeLoadString' in runner
+    assert 'pcall(luau.load, source' in runner
+    assert 'environment = environment' in runner
+    assert 'injectGlobals = false' in runner
+    assert 'getupvalue' not in runner
+    assert 'setupvalue' not in runner
