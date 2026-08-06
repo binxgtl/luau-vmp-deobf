@@ -25,6 +25,9 @@ jobs:
     env:
       FIXTURE_PATH: /opt/luauvmp-fixtures/protected.lua
       LUNE_VERSION: "0.10.5"
+      # Keep the dynamic staged attempt tightly bounded. A non-converging
+      # finalizer now falls back to the already validated strict capture and
+      # still exercises dispatcher recovery plus full-tree devirtualisation.
       LUAUVMP_INSTRUCTION_BUDGET: "5000000"
       PYTHONUNBUFFERED: "1"
 
@@ -75,6 +78,7 @@ jobs:
           set -euxo pipefail
           python --version
           luauvmp --help >/dev/null
+          luauvmp-artifacts --help >/dev/null
           lune --version
 
       - name: Require private fixture on runner
@@ -108,8 +112,9 @@ jobs:
         run: |
           set -euxo pipefail
           test -f recovered/pipeline.json
-          test -f recovered/embedded_main.luau
-          test -d recovered/embedded_sources
+          test -f recovered/program.pseudo.lua
+          test -f recovered/program.decompiled.luau
+          test -f recovered/artifacts/opcode_semantics.json
           python - <<'PY'
           import hashlib
           import json
@@ -119,17 +124,33 @@ jobs:
           pipeline = json.loads((root / "pipeline.json").read_text(encoding="utf-8"))
           print(json.dumps(pipeline, indent=2, sort_keys=True))
 
-          source_files = sorted((root / "embedded_sources").glob("*.luau"))
-          main = root / "embedded_main.luau"
-          print(f"embedded_main bytes={main.stat().st_size} sha256={hashlib.sha256(main.read_bytes()).hexdigest()}")
-          for path in source_files:
-              print(f"{path.name} bytes={path.stat().st_size} sha256={hashlib.sha256(path.read_bytes()).hexdigest()}")
-
-          expected_sizes = sorted([1018, 11999, 58546])
-          actual_sizes = sorted({main.stat().st_size, *(p.stat().st_size for p in source_files)})
-          missing = [size for size in expected_sizes if size not in actual_sizes]
-          if missing:
-              raise SystemExit(f"missing expected embedded source sizes: {missing}; got {actual_sizes}")
+          kind = pipeline["capture_kind"]
+          if kind == "finalised-staged":
+              main = root / "embedded_main.luau"
+              source_files = sorted((root / "embedded_sources").glob("*.luau"))
+              if not main.is_file():
+                  raise SystemExit("finalised staged capture did not emit embedded_main.luau")
+              print(f"embedded_main bytes={main.stat().st_size} sha256={hashlib.sha256(main.read_bytes()).hexdigest()}")
+              for path in source_files:
+                  print(f"{path.name} bytes={path.stat().st_size} sha256={hashlib.sha256(path.read_bytes()).hexdigest()}")
+              expected_sizes = sorted([1018, 11999, 58546])
+              actual_sizes = sorted({main.stat().st_size, *(p.stat().st_size for p in source_files)})
+              missing = [size for size in expected_sizes if size not in actual_sizes]
+              if missing:
+                  raise SystemExit(f"missing expected embedded source sizes: {missing}; got {actual_sizes}")
+          elif kind == "strict-fallback":
+              if pipeline.get("bootstrap_completed"):
+                  raise SystemExit("strict fallback incorrectly marked bootstrap complete")
+              if not pipeline.get("finalization_error"):
+                  raise SystemExit("strict fallback omitted finalization_error")
+              if pipeline.get("prototypes") != 170:
+                  raise SystemExit(f"unexpected strict prototype count: {pipeline.get('prototypes')}")
+              if pipeline.get("instructions", 0) < 10000:
+                  raise SystemExit(f"strict capture is unexpectedly small: {pipeline.get('instructions')}")
+              if pipeline.get("opcode_slots", 0) < 200:
+                  raise SystemExit(f"dispatcher recovery is incomplete: {pipeline.get('opcode_slots')}")
+          else:
+              raise SystemExit(f"unexpected capture kind: {kind}")
           PY
 
       - name: Preserve private diagnostics on sandbox

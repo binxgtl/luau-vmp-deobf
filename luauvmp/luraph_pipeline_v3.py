@@ -37,6 +37,15 @@ def _env_bool(name: str, default: bool) -> bool:
     return raw.strip().lower() not in ("", "0", "false", "no", "off")
 
 
+def _error_summary(exc: Exception, limit: int = 500) -> str:
+    """Return one bounded line suitable for a public manifest."""
+    text = "%s: %s" % (type(exc).__name__, exc)
+    text = " ".join(text.split())
+    if len(text) > limit:
+        text = text[: limit - 3] + "..."
+    return text
+
+
 def run_full_loader(
     input_path: Union[str, Path],
     output_dir: Union[str, Path],
@@ -47,6 +56,7 @@ def run_full_loader(
     force: bool = False,
     keep_failed: bool = False,
     finalize_staged: Optional[bool] = None,
+    finalize_fallback: Optional[bool] = None,
     instruction_budget: Optional[int] = None,
     progress: Optional[Callable[[str], None]] = None,
 ) -> dict:
@@ -56,9 +66,16 @@ def run_full_loader(
     Luraph bootstrap runtime, that bootstrap decoder runs in a lexical sandbox
     with an instruction budget. The final application closure is captured
     before construction and is never invoked.
+
+    A staged finaliser can be sample-dependent or deliberately non-terminating.
+    By default, a finaliser failure is recorded and the pipeline continues from
+    the already validated strict capture. Set ``LUAUVMP_FINALIZE_FALLBACK=0``
+    (or pass ``finalize_fallback=False``) to retain fail-fast behaviour.
     """
     if finalize_staged is None:
         finalize_staged = not _env_bool("LUAUVMP_STRICT_CAPTURE", False)
+    if finalize_fallback is None:
+        finalize_fallback = _env_bool("LUAUVMP_FINALIZE_FALLBACK", True)
     if instruction_budget is None:
         instruction_budget = int(os.environ.get("LUAUVMP_INSTRUCTION_BUDGET", "5000000"))
 
@@ -104,6 +121,7 @@ def run_full_loader(
         active_ir = capture.full_ir
         active_facts = capture.runtime_facts
         finalised = False
+        finalization_error = None
         if staged:
             shutil.copy2(capture.full_ir, artifacts / "bootstrap_ir.tsv")
             shutil.copy2(capture.runtime_facts, artifacts / "bootstrap_runtime_A.tsv")
@@ -111,18 +129,29 @@ def run_full_loader(
                 progress,
                 "[3/7] finalising staged tree in sandbox (final payload disabled)",
             )
-            final = luraph_finalize.run_finalize(
-                vm_path,
-                bytecode_path,
-                artifacts,
-                runtime=runtime,
-                timeout=timeout,
-                instruction_budget=int(instruction_budget),
-                progress=progress,
-            )
-            active_ir = final.full_ir
-            active_facts = final.runtime_facts
-            finalised = True
+            try:
+                final = luraph_finalize.run_finalize(
+                    vm_path,
+                    bytecode_path,
+                    artifacts,
+                    runtime=runtime,
+                    timeout=timeout,
+                    instruction_budget=int(instruction_budget),
+                    progress=progress,
+                )
+            except Exception as exc:
+                if not finalize_fallback:
+                    raise
+                finalization_error = _error_summary(exc)
+                _emit(
+                    progress,
+                    "[3/7] staged finalisation failed; using strict capture: %s"
+                    % finalization_error,
+                )
+            else:
+                active_ir = final.full_ir
+                active_facts = final.runtime_facts
+                finalised = True
         else:
             _emit(progress, "[3/7] parsed tree is already the final capture")
 
@@ -186,14 +215,24 @@ def run_full_loader(
         )
 
         elapsed = time.monotonic() - started
+        if finalised:
+            capture_kind = "finalised-staged"
+        elif finalization_error is not None:
+            capture_kind = "strict-fallback"
+        else:
+            capture_kind = "strict-final"
+        finalize_runner = artifacts / "finalize_runner.luau"
         pipeline = {
             "format_version": 3,
             "input": str(source_path),
             "runtime": runtime if isinstance(runtime, str) else list(runtime),
             "payload_executed": False,
-            "bootstrap_executed": finalised,
+            "bootstrap_executed": bool(staged),
+            "bootstrap_completed": finalised,
             "final_payload_executed": False,
-            "capture_kind": "finalised-staged" if finalised else "strict-final",
+            "capture_kind": capture_kind,
+            "finalization_attempted": bool(staged),
+            "finalization_error": finalization_error,
             "prototypes": manifest["prototypes"],
             "instructions": manifest["instructions"],
             "opcode_slots": manifest["opcode_slots"],
@@ -207,7 +246,7 @@ def run_full_loader(
                 "semantics": "artifacts/opcode_semantics.json",
                 "capture_runner": "artifacts/capture_runner.luau",
                 "finalize_runner": (
-                    "artifacts/finalize_runner.luau" if finalised else None
+                    "artifacts/finalize_runner.luau" if finalize_runner.is_file() else None
                 ),
                 "compile_runner": "artifacts/compile_decompiled.luau",
             },

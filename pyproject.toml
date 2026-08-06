@@ -20,6 +20,7 @@ classifiers = [
 
 [project.scripts]
 luauvmp = "luauvmp.cli:main"
+luauvmp-artifacts = "luauvmp.luraph_artifacts:main"
 
 [tool.setuptools.packages.find]
 include = ["luauvmp*", "tools*"]
