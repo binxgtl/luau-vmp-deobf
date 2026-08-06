@@ -12,11 +12,8 @@ from . import luraph_finalize
 
 _INSTALLED = False
 _MARKER = "-- The VM is compiled as part of this runner, so Lune may use native codegen.\n"
-_FUNCTION_ENTRY = "q=(function(...)local u=1;while true do"
-_TRACED_FUNCTION_ENTRY = (
-    "q=(function(...)__LUAUVMP_HOT_ENTER(W,P,...);"
-    "local u=1;while true do"
-)
+_FUNCTION_ENTRY = "q=(function(...)"
+_TRACED_FUNCTION_ENTRY = "q=(function(...)__LUAUVMP_HOT_ENTER(W,P,...);"
 _TRACE_HELPERS = r'''-- Diagnostic entry trace for sample-local hot decoder closures.
 -- Never print protected string contents; strings are represented by length only.
 -- Keep this diagnostic run short even if the workflow ceiling is much higher.
