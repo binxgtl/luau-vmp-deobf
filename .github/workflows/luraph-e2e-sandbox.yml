@@ -94,8 +94,6 @@ jobs:
       - name: Run full Luraph pipeline
         id: pipeline
         shell: bash
-        env:
-          LUAUVMP_E2E_ORIGINAL_BOOTSTRAP: "1"
         run: |
           set -o pipefail
           rm -rf recovered recovered.partial-* e2e.log
