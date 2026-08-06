@@ -132,10 +132,15 @@ def install() -> None:
 
     def instrument_final_vm_source(vm_source: str) -> str:
         patched = original_instrument(vm_source)
+        # Some helper opcode arrays are decoded in place after their closures
+        # are constructed. Try once at construction, then again on first call;
+        # a successful late match replaces q so later calls are direct/native.
         replacement = (
             ";local __fast=__LUAUVMP_FASTPATH(W,P);"
             "if __fast then return __fast end;"
             "q=(function(...)"
+            "local __late=__LUAUVMP_FASTPATH(W,P);"
+            "if __late then q=__late;return __late(...) end;"
         )
         patched, count = _FACTORY_SITE.subn(replacement, patched, count=1)
         if count != 1:
