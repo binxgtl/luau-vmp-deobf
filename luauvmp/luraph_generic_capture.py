@@ -26,6 +26,7 @@ _LEGACY_NESTED = {
         21: "math.floor", 22: "bit32.bnot",
     }
 }
+_VERIFIED_SLOTS = {50, 59}
 
 
 @dataclass(frozen=True)
@@ -43,7 +44,7 @@ def _select(vm_source: str) -> Optional[Candidate]:
     for match in public._PUBLIC_FINAL_RETURN.finditer(vm_source):
         slot = public._integer(match.group("slot"))
         environment = public._integer(match.group("environment"))
-        if slot is not None and environment == 1:
+        if slot is not None and slot not in _VERIFIED_SLOTS and environment == 1:
             finals.append((slot, match))
     if not finals:
         return None
