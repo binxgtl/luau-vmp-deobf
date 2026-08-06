@@ -26,6 +26,7 @@ jobs:
       FIXTURE_PATH: /opt/luauvmp-fixtures/protected.lua
       LUNE_VERSION: "0.10.5"
       LUAUVMP_INSTRUCTION_BUDGET: "2500000000"
+      LUAUVMP_E2E_CALLTRACE: "1"
       PYTHONUNBUFFERED: "1"
 
     steps:
