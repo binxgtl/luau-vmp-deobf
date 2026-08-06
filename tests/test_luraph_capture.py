@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -10,9 +12,6 @@ from luauvmp.luraph_capture import (
     build_lune_runner,
     extract_interpreter_factory,
     instrument_vm_source,
-)
-from luauvmp.luraph_early_capture import (
-    instrument_vm_source as early_instrument_vm_source,
 )
 
 
@@ -42,8 +41,9 @@ def test_factory_extraction_is_structural():
 
 
 def test_fail_closed_instrumenter_is_installed_for_public_api():
-    assert luraph_capture.instrument_vm_source is early_instrument_vm_source
-    assert instrument_vm_source is early_instrument_vm_source
+    assert luraph_capture.instrument_vm_source is instrument_vm_source
+    with pytest.raises(luraph_capture.CaptureError):
+        instrument_vm_source('return function() end')
 
 
 def test_payload_execution_is_intercepted_before_root_runs():
