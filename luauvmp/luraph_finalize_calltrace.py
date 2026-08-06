@@ -13,6 +13,9 @@ _MARKER = "-- The VM is compiled as part of this runner, so Lune may use native 
 _FACTORY_RETURN = "return q;end);"
 _TRACE_HELPERS = r'''-- Diagnostic wrapper for the four sample-local hot decoder closures.
 -- Never print protected string contents; strings are represented by length only.
+-- Keep this diagnostic run short even if the workflow ceiling is much higher.
+__stepBudget = math.min(__stepBudget, 12000000)
+print("[finalize] diagnostic call trace step ceiling=" .. tostring(__stepBudget))
 local __hotCallCounts = {}
 local function __LUAUVMP_SAFE_VALUE(value, depth)
     local kind = type(value)
@@ -65,7 +68,7 @@ local function __LUAUVMP_WRAP_HOT(proto, fn, cells)
     return function(...)
         local callNumber = __hotCallCounts[key] + 1
         __hotCallCounts[key] = callNumber
-        local report = callNumber <= 4 or callNumber % 100000 == 0
+        local report = callNumber <= 6 or callNumber % 25000 == 0
         local arguments
         if report then
             arguments = table.pack(...)
