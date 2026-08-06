@@ -1,5 +1,5 @@
 """luau-vmp-deobf - static deobfuscator for Luau VM-protected scripts."""
-__version__ = '0.4.0'
+__version__ = '0.4.1'
 
 from .spec import Spec           # noqa: F401
 from .analyse import analyse     # noqa: F401
@@ -16,3 +16,10 @@ _luraph_capture.instrument_vm_source = _instrument_vm_source
 from .luraph_capture_format import install as _install_capture_format
 
 _install_capture_format()
+
+# Unsupported dispatcher fragments are audit data, not standalone Luau
+# statements. Quote them so parenthesised calls and partial state fragments can
+# never invalidate the generated source file.
+from .luraph_fallback_safety import install as _install_fallback_safety
+
+_install_fallback_safety()
