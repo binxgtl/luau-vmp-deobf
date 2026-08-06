@@ -62,3 +62,12 @@ def test_lune_runner_supplies_bootstrap_compatibility_without_privileges():
     assert 'injectGlobals = false' in runner
     assert 'getupvalue' not in runner
     assert 'setupvalue' not in runner
+
+
+def test_lune_runner_uses_optimized_compile_and_reports_progress():
+    runner = build_lune_runner('vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv')
+    assert 'luau.compile(vmSource' in runner
+    assert 'optimizationLevel = 2' in runner
+    assert 'status("running bytecode parser")' in runner
+    assert 'status("capture callback entered")' in runner
+    assert 'status("writing typed IR")' in runner
