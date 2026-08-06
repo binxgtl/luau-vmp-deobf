@@ -66,6 +66,20 @@ def test_lune_runner_has_closed_capture_boundary():
     assert 'game = game' not in runner
 
 
+def test_lune_runner_allowlists_only_pure_datatypes():
+    runner = build_lune_runner('vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv')
+    assert 'local robloxDatatypes = require("@lune/roblox")' in runner
+    for name in ('CFrame', 'Enum', 'Ray', 'UDim', 'UDim2', 'Vector2', 'Vector3'):
+        assert f'{name} = robloxDatatypes.{name}' in runner
+    assert 'Path2DControlPoint = Path2DControlPointCompat' in runner
+    assert '__luauvmp_datatype = "Path2DControlPoint"' in runner
+    assert 'kind = typeof(value)' in runner
+    assert 'text = tostring(value)' in runner
+    assert 'robloxDatatypes = robloxDatatypes' not in runner
+    assert 'Instance = robloxDatatypes.Instance' not in runner
+    assert 'getAuthCookie' not in runner
+
+
 def test_lune_runner_supplies_bootstrap_compatibility_without_privileges():
     runner = build_lune_runner('vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv')
     assert 'debug = debugCompat' in runner
@@ -76,13 +90,6 @@ def test_lune_runner_supplies_bootstrap_compatibility_without_privileges():
     assert 'injectGlobals = false' in runner
     assert 'getupvalue' not in runner
     assert 'setupvalue' not in runner
-    # The trusted runner imports Lune's datatype table, but only Vector3 enters
-    # the recovered VM environment. The module and privileged APIs remain hidden.
-    assert 'local robloxDatatypes = require("@lune/roblox")' in runner
-    assert 'Vector3 = robloxDatatypes.Vector3' in runner
-    assert 'robloxDatatypes = robloxDatatypes' not in runner
-    assert 'Instance = robloxDatatypes.Instance' not in runner
-    assert 'CFrame = robloxDatatypes.CFrame' not in runner
 
 
 def test_missing_global_telemetry_never_yields_from_metamethod():
