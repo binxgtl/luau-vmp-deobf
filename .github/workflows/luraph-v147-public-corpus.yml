@@ -19,7 +19,7 @@ concurrency:
 jobs:
   corpus:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -79,7 +79,7 @@ jobs:
           chmod +x "$lune"
           echo "$(dirname "$lune")" >> "$GITHUB_PATH"
 
-      - name: Decompile shard
+      - name: Decompile shard until first blocker
         run: |
           set -euxo pipefail
           python tools/run_luraph_v147_corpus.py \
@@ -87,6 +87,7 @@ jobs:
             --shard-index "${{ matrix.shard }}" \
             --shard-count 8 \
             --timeout 60 \
+            --max-failures 1 \
             -o "corpus-results/shard-${{ matrix.shard }}"
 
       - name: Upload diagnostics
