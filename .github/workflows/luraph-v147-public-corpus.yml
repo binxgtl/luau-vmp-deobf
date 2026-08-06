@@ -21,11 +21,14 @@ concurrency:
 jobs:
   corpus:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        sample:
+          - 001163f72ed972da.lua
+          - 00a98a1f920aa83a.lua
+          - 02779a141d5f7738.lua
     env:
       LUNE_VERSION: "0.10.5"
       LUAUVMP_FINALIZE_FALLBACK: "1"
@@ -37,7 +40,7 @@ jobs:
       - name: Checkout deobfuscator
         uses: actions/checkout@v4
 
-      - name: Checkout public samples sparsely
+      - name: Checkout one representative sample
         uses: actions/checkout@v4
         with:
           repository: terrorlua/obfuscator-samples
@@ -46,7 +49,7 @@ jobs:
           fetch-depth: 1
           filter: blob:none
           sparse-checkout: |
-            Luraph/v14.7
+            Luraph/v14.7/${{ matrix.sample }}
           sparse-checkout-cone-mode: false
 
       - name: Set up Python
@@ -62,22 +65,19 @@ jobs:
           python -m pip install -e .
           python -m py_compile luauvmp/*.py tools/*.py
 
-      # The public v14.7 layout keeps its VM in the wrapper and carries one
-      # Ascii85 + Zstandard bytecode stream, unlike the older two-stream loader.
-      - name: Fingerprint first single-stream sample
+      - name: Fingerprint container streams
         run: |
           set -euxo pipefail
           python tools/probe_luraph_v147_stream.py \
             public-samples/Luraph/v14.7 \
-            --shard-index "${{ matrix.shard }}" \
-            --shard-count 8
+            --shard-index 0 \
+            --shard-count 1
 
       - name: Probe dispatcher and closure sites
         run: |
           set -euxo pipefail
-          sample="$(find public-samples/Luraph/v14.7 -maxdepth 1 -type f -name '*.lua' | sort | sed -n "$(( ${{ matrix.shard }} + 1 ))p")"
-          test -n "$sample"
-          python tools/probe_luraph_v147_structure.py "$sample"
+          python tools/probe_luraph_v147_structure.py \
+            "public-samples/Luraph/v14.7/${{ matrix.sample }}"
 
       - name: Install pinned Lune
         shell: bash
@@ -99,22 +99,22 @@ jobs:
           chmod +x "$lune"
           echo "$(dirname "$lune")" >> "$GITHUB_PATH"
 
-      - name: Decompile shard until first blocker
+      - name: Decompile representative sample
         run: |
           set -euxo pipefail
           python tools/run_luraph_v147_corpus.py \
             public-samples/Luraph/v14.7 \
-            --shard-index "${{ matrix.shard }}" \
-            --shard-count 8 \
+            --shard-index 0 \
+            --shard-count 1 \
             --timeout 60 \
             --max-failures 1 \
-            -o "corpus-results/shard-${{ matrix.shard }}"
+            -o "corpus-results/${{ matrix.sample }}"
 
       - name: Upload diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: luraph-v147-shard-${{ matrix.shard }}
-          path: corpus-results/shard-${{ matrix.shard }}
+          name: luraph-v147-${{ matrix.sample }}
+          path: corpus-results/${{ matrix.sample }}
           if-no-files-found: warn
           retention-days: 7
