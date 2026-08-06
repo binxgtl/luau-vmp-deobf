@@ -1,5 +1,5 @@
 """luau-vmp-deobf - static deobfuscator for Luau VM-protected scripts."""
-__version__ = '0.3.3'
+__version__ = '0.3.4'
 
 from .spec import Spec           # noqa: F401
 from .analyse import analyse     # noqa: F401
@@ -10,3 +10,9 @@ from . import luraph_capture as _luraph_capture
 from .luraph_early_capture import instrument_vm_source as _instrument_vm_source
 
 _luraph_capture.instrument_vm_source = _instrument_vm_source
+
+# The Lune runner is generated through two string-literal layers. Correct the
+# capture TSV delimiters before any CLI or library caller builds the runner.
+from .luraph_capture_format import install as _install_capture_format
+
+_install_capture_format()
