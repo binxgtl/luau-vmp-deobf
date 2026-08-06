@@ -43,15 +43,35 @@ def install() -> None:
         )
 
         # Roblox datatypes are not injected as runner globals by Lune. Load the
-        # trusted standard library outside the recovered VM, then forward only
-        # the pure Vector3 constructor needed for v14.7 constant parsing. The
-        # module itself (and Instance, auth, filesystem or network APIs) never
-        # enters the VM environment.
+        # trusted standard library outside the recovered VM. Only an explicit
+        # allow-list of pure value constructors enters the parser environment;
+        # the module itself, Instance, auth, filesystem and network APIs remain
+        # unreachable from recovered code.
         require_marker = 'local stdio = require("@lune/stdio")\n'
-        trusted_import = (
-            'local stdio = require("@lune/stdio")\n'
-            'local robloxDatatypes = require("@lune/roblox")\n'
-        )
+        trusted_import = r'''local stdio = require("@lune/stdio")
+local robloxDatatypes = require("@lune/roblox")
+
+-- Path2DControlPoint is present in current Roblox bytecode but is not exported
+-- by Lune 0.10.5. Parsing only needs a stable constant value, so preserve every
+-- constructor argument as inert typed text instead of emulating engine behavior.
+local Path2DControlPointCompat = table.freeze({
+    new = function(...)
+        local input = table.pack(...)
+        local captured = {
+            __luauvmp_datatype = "Path2DControlPoint",
+            n = input.n,
+        }
+        for index = 1, input.n do
+            local value = input[index]
+            captured[index] = table.freeze({
+                kind = typeof(value),
+                text = tostring(value),
+            })
+        end
+        return table.freeze(captured)
+    end,
+})
+'''
         if require_marker not in runner:
             raise luraph_capture.CaptureError(
                 "safe-capture trusted import marker was not found"
@@ -61,7 +81,14 @@ def install() -> None:
         datatype_marker = '    utf8 = utf8,\n}'
         datatype_environment = (
             '    utf8 = utf8,\n'
+            '    CFrame = robloxDatatypes.CFrame,\n'
+            '    Enum = robloxDatatypes.Enum,\n'
+            '    Ray = robloxDatatypes.Ray,\n'
+            '    UDim = robloxDatatypes.UDim,\n'
+            '    UDim2 = robloxDatatypes.UDim2,\n'
+            '    Vector2 = robloxDatatypes.Vector2,\n'
             '    Vector3 = robloxDatatypes.Vector3,\n'
+            '    Path2DControlPoint = Path2DControlPointCompat,\n'
             '}'
         )
         if datatype_marker not in runner:
