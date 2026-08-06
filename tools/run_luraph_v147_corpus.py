@@ -169,38 +169,61 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--shard-count", type=int, default=1)
     parser.add_argument("--timeout", type=int, default=60)
+    parser.add_argument(
+        "--max-failures",
+        type=int,
+        default=0,
+        help="stop a shard after this many failures; zero scans the whole shard",
+    )
     args = parser.parse_args(argv)
 
     if args.shard_count < 1 or not 0 <= args.shard_index < args.shard_count:
         parser.error("shard index must be within shard count")
+    if args.max_failures < 0:
+        parser.error("max failures must not be negative")
     samples = select_shard(args.samples.glob("*.lua"), args.shard_index, args.shard_count)
     if not samples:
         raise SystemExit("no Luraph v14.7 samples selected")
     args.output.mkdir(parents=True, exist_ok=True)
 
     records = []
+    stopped_early = False
     for position, sample in enumerate(samples, 1):
         print("[%d/%d] %s" % (position, len(samples), sample.name), flush=True)
         record = run_sample(sample, args.output, args.timeout)
         records.append(record)
         print(json.dumps(record, sort_keys=True), flush=True)
         _print_failure_tail(record, args.output)
+        failures = sum(not bool(item["ok"]) for item in records)
+        if args.max_failures and failures >= args.max_failures:
+            stopped_early = position < len(samples)
+            if stopped_early:
+                print(
+                    "stopping shard after %d failure(s); %d sample(s) remain"
+                    % (failures, len(samples) - position),
+                    flush=True,
+                )
+            break
 
     summary = {
-        "format_version": 2,
+        "format_version": 3,
         "shard_index": args.shard_index,
         "shard_count": args.shard_count,
+        "selected_samples": len(samples),
         "samples": len(records),
         "passed": sum(bool(record["ok"]) for record in records),
         "failed": sum(not bool(record["ok"]) for record in records),
         "timeouts": sum(bool(record.get("timed_out")) for record in records),
+        "stopped_early": stopped_early,
         "records": records,
     }
     (args.output / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    print(json.dumps({key: summary[key] for key in ("samples", "passed", "failed", "timeouts")},
-                     sort_keys=True))
+    print(json.dumps({
+        key: summary[key]
+        for key in ("selected_samples", "samples", "passed", "failed", "timeouts", "stopped_early")
+    }, sort_keys=True))
     return 1 if summary["failed"] else 0
 
 
