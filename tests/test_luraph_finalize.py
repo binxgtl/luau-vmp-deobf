@@ -66,15 +66,15 @@ def test_finalize_runner_replaces_exact_hot_xor_helper_only():
     assert 'return bit32.bxor(a, b)' in runner
 
 
-def test_finalize_runner_traces_hot_calls_without_string_contents():
+def test_finalize_runner_traces_hot_calls_without_replacing_closures():
     patched = instrument_final_vm_source(synthetic_vm())
     runner = build_finalize_runner(
         patched, 'bc.bin', 'final.tsv', 'facts.tsv', 12345,
     )
-    assert 'local function __LUAUVMP_WRAP_HOT(proto, fn, cells)' in runner
-    assert 'return __LUAUVMP_WRAP_HOT(W,q,P);end);' in runner
-    assert 'return q;end);' not in runner
+    assert 'local function __LUAUVMP_HOT_ENTER(proto, cells, ...)' in runner
+    assert 'q=(function(...)__LUAUVMP_HOT_ENTER(W,P,...);local u=1;' in runner
+    assert 'return q;end);' in runner
+    assert '__LUAUVMP_WRAP_HOT' not in runner
     assert 'string#' in runner
     assert '__LUAUVMP_PACK_SUMMARY' in runner
-    assert '[finalize] call proto=' in runner
-    assert '[finalize] ret proto=' in runner
+    assert '[finalize] enter proto=' in runner
