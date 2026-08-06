@@ -26,7 +26,6 @@ jobs:
       FIXTURE_PATH: /opt/luauvmp-fixtures/protected.lua
       LUNE_VERSION: "0.10.5"
       LUAUVMP_INSTRUCTION_BUDGET: "2500000000"
-      LUAUVMP_E2E_CALLTRACE: "1"
       PYTHONUNBUFFERED: "1"
 
     steps:
@@ -95,6 +94,8 @@ jobs:
       - name: Run full Luraph pipeline
         id: pipeline
         shell: bash
+        env:
+          LUAUVMP_E2E_CALLTRACE: "1"
         run: |
           set -o pipefail
           rm -rf recovered recovered.partial-* e2e.log
