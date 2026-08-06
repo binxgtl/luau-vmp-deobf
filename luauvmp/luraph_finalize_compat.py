@@ -8,6 +8,7 @@ return only the closed sandbox environment.
 """
 from __future__ import annotations
 
+import os
 import re
 
 from . import luraph_finalize
@@ -29,6 +30,15 @@ _STEP_BLOCK = re.compile(
     r"    end\n"
     r"end\n"
 )
+_FAST_STEP = '''local __stepCount = 0
+local __stepBudget = %d
+local function __LUAUVMP_STEP(_proto, _pc, _opcode)
+    __stepCount += 1
+    if __stepCount > __stepBudget then
+        error("Luraph bootstrap instruction budget exceeded: " .. tostring(__stepBudget))
+    end
+end
+'''
 _NEW_STEP = '''local __stepCount = 0
 local __stepBudget = %d
 local __lastProto, __lastPc, __lastOpcode = nil, nil, nil
@@ -201,8 +211,13 @@ def install() -> None:
             raise luraph_finalize.FinalizeError(
                 "finaliser compatibility patch could not locate budget guard"
             )
+        detailed = (
+            os.environ.get("LUAUVMP_FINALIZE_DIAGNOSTICS") == "1"
+            or os.environ.get("LUAUVMP_E2E_CALLTRACE") == "1"
+        )
+        step_template = _NEW_STEP if detailed else _FAST_STEP
         runner = (runner[:step_match.start()]
-                  + (_NEW_STEP % int(step_match.group("budget")))
+                  + (step_template % int(step_match.group("budget")))
                   + runner[step_match.end():])
         if _ENV_MARKER not in runner:
             raise luraph_finalize.FinalizeError(
