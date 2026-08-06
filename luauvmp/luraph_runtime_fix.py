@@ -71,6 +71,15 @@ local Path2DControlPointCompat = table.freeze({
         return table.freeze(captured)
     end,
 })
+
+-- Some wrappers cancel a watchdog handle during parser teardown. Expose only a
+-- synchronous no-op cancel operation. Scheduling APIs remain absent so captured
+-- code cannot create, defer, or resume execution through the runner task API.
+local TaskCompat = table.freeze({
+    cancel = function(_)
+        return nil
+    end,
+})
 '''
         if require_marker not in runner:
             raise luraph_capture.CaptureError(
@@ -89,6 +98,7 @@ local Path2DControlPointCompat = table.freeze({
             '    Vector2 = robloxDatatypes.Vector2,\n'
             '    Vector3 = robloxDatatypes.Vector3,\n'
             '    Path2DControlPoint = Path2DControlPointCompat,\n'
+            '    task = TaskCompat,\n'
             '}'
         )
         if datatype_marker not in runner:
