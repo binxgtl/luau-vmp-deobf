@@ -113,7 +113,8 @@ jobs:
       - name: Enforce fully-devirtualized quality gate
         run: |
           set -euxo pipefail
-          root="corpus-results/${{ matrix.sample }}/${{ matrix.sample%.lua }}"
+          sample="${{ matrix.sample }}"
+          root="corpus-results/${sample}/${sample%.lua}"
           python - "$root/pipeline.json" "$root/artifacts/opcode_semantics.json" <<'PY'
           import json
           import sys
