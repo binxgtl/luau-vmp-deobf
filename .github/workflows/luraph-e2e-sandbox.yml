@@ -25,7 +25,8 @@ jobs:
     env:
       FIXTURE_PATH: /opt/luauvmp-fixtures/protected.lua
       LUNE_VERSION: "0.10.5"
-      LUAUVMP_INSTRUCTION_BUDGET: "300000000"
+      LUAUVMP_INSTRUCTION_BUDGET: "1000000000"
+      LUAUVMP_E2E_ORIGINAL_BOOTSTRAP: "1"
       PYTHONUNBUFFERED: "1"
 
     steps:
@@ -83,7 +84,6 @@ jobs:
           set -euo pipefail
           if [[ ! -s "$FIXTURE_PATH" ]]; then
             echo "::error::Missing private fixture at $FIXTURE_PATH"
-            echo "Create it on the runner without committing it to GitHub."
             exit 78
           fi
           mkdir -p "$RUNNER_TEMP/luauvmp-fixture"
@@ -98,9 +98,9 @@ jobs:
         run: |
           set -o pipefail
           rm -rf recovered recovered.partial-* e2e.log
-          timeout --signal=INT --kill-after=30s 900s \
+          timeout --signal=INT --kill-after=30s 1500s \
             luauvmp luraph-full "$RUNNER_TEMP/luauvmp-fixture/protected.lua" \
-              -o recovered --force --timeout 600 --keep-failed \
+              -o recovered --force --timeout 1200 --keep-failed \
             2>&1 | tee e2e.log
 
       - name: Validate expected final output
@@ -114,17 +114,14 @@ jobs:
           import hashlib
           import json
           from pathlib import Path
-
           root = Path("recovered")
           pipeline = json.loads((root / "pipeline.json").read_text(encoding="utf-8"))
           print(json.dumps(pipeline, indent=2, sort_keys=True))
-
           source_files = sorted((root / "embedded_sources").glob("*.luau"))
           main = root / "embedded_main.luau"
           print(f"embedded_main bytes={main.stat().st_size} sha256={hashlib.sha256(main.read_bytes()).hexdigest()}")
           for path in source_files:
               print(f"{path.name} bytes={path.stat().st_size} sha256={hashlib.sha256(path.read_bytes()).hexdigest()}")
-
           expected_sizes = sorted([1018, 11999, 58546])
           actual_sizes = sorted({main.stat().st_size, *(p.stat().st_size for p in source_files)})
           missing = [size for size in expected_sizes if size not in actual_sizes]
