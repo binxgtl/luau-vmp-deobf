@@ -9,7 +9,8 @@ import shutil
 import tempfile
 import time
 
-from . import luraph, luraph_capture, luraph_dispatch, luraph_full, luraph_recover
+from . import luraph_loader as luraph
+from . import luraph_capture, luraph_dispatch, luraph_full, luraph_recover
 
 
 class PipelineError(RuntimeError):
@@ -32,12 +33,7 @@ def run_full_loader(
     keep_failed: bool = False,
     progress: Optional[Callable[[str], None]] = None,
 ) -> dict:
-    """Run unpack -> safe capture -> dispatcher recovery -> devirtualisation.
-
-    The only dynamic stage is the recovered VM's bytecode parser. Its final
-    payload-closure constructor is replaced before execution and the Lune load
-    environment exposes no network, Roblox, or executor APIs.
-    """
+    """Run unpack -> safe capture -> dispatcher recovery -> devirtualisation."""
     source_path = Path(input_path)
     output = Path(output_dir)
     if not source_path.is_file():
@@ -65,37 +61,26 @@ def run_full_loader(
 
         _emit(progress, "[2/4] safely capturing prototypes (payload disabled)")
         capture = luraph_capture.run_capture(
-            vm_path,
-            bytecode_path,
-            artifacts,
-            runtime=runtime,
-            timeout=timeout,
+            vm_path, bytecode_path, artifacts, runtime=runtime, timeout=timeout,
         )
 
         _emit(progress, "[3/4] recovering sample-local dispatcher semantics")
         semantics_path = artifacts / "opcode_semantics.json"
         semantics_text_path = artifacts / "opcode_semantics.txt"
         luraph_recover.recover_dispatch(
-            capture.factory,
-            capture.runtime_facts,
-            semantics_path,
-            semantics_text_path,
+            capture.factory, capture.runtime_facts,
+            semantics_path, semantics_text_path,
         )
 
         _emit(progress, "[4/4] devirtualising the complete prototype tree")
         program = luraph_full.load_full_ir(capture.full_ir)
         semantics = luraph_dispatch.load_semantics(semantics_path)
-        used = sorted({
-            instruction.opcode
-            for proto in program.protos.values()
-            for instruction in proto.instructions
-        })
+        used = sorted({instruction.opcode
+                       for proto in program.protos.values()
+                       for instruction in proto.instructions})
         luraph_dispatch.validate_semantics(semantics, used)
         manifest = luraph_full.write_program(
-            program,
-            semantics,
-            stage,
-            split_protos=split_protos,
+            program, semantics, stage, split_protos=split_protos,
         )
 
         elapsed = time.monotonic() - started
@@ -129,11 +114,9 @@ def run_full_loader(
         return pipeline
     except Exception:
         if keep_failed:
-            failure_note = stage / "FAILED.txt"
-            failure_note.write_text(
+            (stage / "FAILED.txt").write_text(
                 "The pipeline did not complete. This directory may contain sensitive "
-                "decoded artifacts; review before sharing.\n",
-                encoding="utf-8",
+                "decoded artifacts; review before sharing.\n", encoding="utf-8",
             )
         else:
             shutil.rmtree(stage, ignore_errors=True)
