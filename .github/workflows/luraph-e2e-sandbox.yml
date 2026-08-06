@@ -25,11 +25,11 @@ jobs:
     env:
       FIXTURE_PATH: /opt/luauvmp-fixtures/protected.lua
       LUNE_VERSION: "0.10.5"
-      # The private staged fixture needs more than five million bootstrap VM
-      # instructions before the final application capture point. The wall-clock
-      # timeout remains the outer safety boundary and the final payload closure
-      # is still replaced before construction.
-      LUAUVMP_INSTRUCTION_BUDGET: "30000000"
+      # The private staged fixture performs a long sample-local decode before
+      # reaching the final application capture point. The wall-clock timeout
+      # remains the outer safety boundary and the final payload closure is still
+      # replaced before construction.
+      LUAUVMP_INSTRUCTION_BUDGET: "150000000"
       PYTHONUNBUFFERED: "1"
 
     steps:
