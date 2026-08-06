@@ -1,10 +1,10 @@
 """Native fast paths for exact hot staged-bootstrap helper fingerprints.
 
-The captured Luraph bootstrap spends almost all of its time interpreting three
-small pure helpers: arithmetic 32-bit XOR, one-based bit extraction, and a
-four-byte word decoder assembled from those primitives.  Replacing only their
-exact sample-local prototype shapes keeps unknown trees on the ordinary VM path
-while making the finite decoder practical to execute inside the sandbox.
+The captured Luraph bootstrap spends almost all of its time interpreting a few
+small pure helpers: arithmetic 32-bit XOR, one-based bit extraction, four-byte
+word decoding, and IEEE-754 double reconstruction. Replacing only their exact
+sample-local prototype shapes keeps unknown trees on the ordinary VM path while
+making the finite decoder practical to execute inside the sandbox.
 """
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ local function __LUAUVMP_FASTPATH(proto, cells)
     end
 
     -- Exact no-upvalue 104-instruction helper used as extract(value, first,
-    -- last), with one-based inclusive bit positions.  The third argument is
+    -- last), with one-based inclusive bit positions. The third argument is
     -- optional and then selects a single bit.
     if #ops == 104
         and ops[1] == 186 and ops[2] == 79 and ops[5] == 41
@@ -61,7 +61,7 @@ local function __LUAUVMP_FASTPATH(proto, cells)
         end
     end
 
-    -- Exact 33-instruction four-byte word helper.  Preserve its captured
+    -- Exact 33-instruction four-byte word helper. Preserve its captured
     -- string-byte and XOR upvalues instead of assuming their identities.
     if #ops == 33
         and ops[1] == 186 and ops[2] == 153 and ops[3] == 153
@@ -81,6 +81,44 @@ local function __LUAUVMP_FASTPATH(proto, cells)
                 + xor(b3, 32) * 65536
                 + xor(b2, 16) * 256
                 + xor(b1, 8)
+        end
+    end
+
+    -- Exact 134-instruction IEEE-754 decoder. It reads low/high 32-bit words
+    -- through cells[0] and uses the one-based extractor in cells[1].
+    if #ops == 134
+        and ops[1] == 186 and ops[2] == 186 and ops[3] == 14
+        and ops[6] == 128 and ops[7] == 135 and ops[8] == 127
+        and ops[10] == 46 and ops[11] == 127 and ops[13] == 53
+        and ops[24] == 153 and ops[29] == 174 and ops[30] == 174
+        and ops[38] == 14 and ops[40] == 99 and ops[80] == 98
+        and ops[84] == 14 and ops[89] == 170 and ops[90] == 98
+        and ops[91] == 46 and ops[103] == 153 and ops[105] == 174
+        and ops[106] == 93 and ops[119] == 153 and ops[120] == 226
+        and ops[121] == 153 and ops[124] == 226 and ops[126] == 153
+        and ops[134] == 186
+        and type(cells) == "table"
+        and type(cells[0]) == "function"
+        and type(cells[1]) == "function"
+    then
+        local readWord, extract = cells[0], cells[1]
+        __LUAUVMP_REPORT_FASTPATH("IEEE-754 double decode")
+        return function()
+            local low = readWord()
+            local high = readWord()
+            local mantissa = extract(high, 1, 20) * 4294967296 + low
+            local exponent = extract(high, 21, 31)
+            local sign = extract(high, 32) == 0 and 1 or -1
+            if exponent == 0 then
+                if mantissa == 0 then return sign * 0 end
+                return sign * (2 ^ -1022) * (mantissa / 4503599627370496)
+            end
+            if exponent == 2047 then
+                if mantissa == 0 then return sign * math.huge end
+                return 0 / 0
+            end
+            return sign * (2 ^ (exponent - 1023))
+                * (1 + mantissa / 4503599627370496)
         end
     end
 
