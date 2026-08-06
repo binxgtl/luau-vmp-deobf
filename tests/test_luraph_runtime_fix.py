@@ -39,3 +39,20 @@ def test_plausible_runtime_helper_capture_is_accepted(tmp_path):
         ))
     path.write_text(''.join(rows))
     validate_runtime_facts(path)
+
+
+def test_safe_capture_exposes_only_inert_task_cancel():
+    runner = luraph_capture.build_lune_runner(
+        'vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv',
+    )
+    assert 'local TaskCompat = table.freeze({' in runner
+    assert 'cancel = function(_)' in runner
+    assert 'task = TaskCompat,' in runner
+
+    # The recovered parser may cancel an existing watchdog handle, but cannot
+    # schedule or resume work through the trusted runner environment.
+    environment = runner.split('local missingSafeGlobals = {}', 1)[1]
+    assert 'task.spawn' not in environment
+    assert 'task.defer' not in environment
+    assert 'task.delay' not in environment
+    assert 'task.wait' not in environment
