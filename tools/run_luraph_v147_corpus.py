@@ -8,18 +8,64 @@ from __future__ import annotations
 
 from argparse import ArgumentParser
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Optional, Union
 import hashlib
 import json
 import os
+import signal
 import subprocess
 import sys
 import time
 
 
+TextOrBytes = Optional[Union[str, bytes]]
+
+
 def select_shard(paths: Iterable[Path], index: int, count: int) -> list[Path]:
     ordered = sorted(paths, key=lambda path: path.name)
     return [path for position, path in enumerate(ordered) if position % count == index]
+
+
+def _text(value: TextOrBytes) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    return value
+
+
+def _last_progress(log: str) -> Optional[str]:
+    for line in reversed(log.splitlines()):
+        stripped = line.strip()
+        if stripped.startswith("[") or stripped.startswith("luraph-full failed:"):
+            return stripped[:500]
+    return None
+
+
+def _stop_process(process: subprocess.Popen[bytes]) -> bytes:
+    """Stop the CLI and every Lune child while preserving buffered output."""
+    if process.poll() is None:
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGINT)
+            else:
+                process.send_signal(signal.SIGINT)
+        except (ProcessLookupError, OSError):
+            pass
+    try:
+        output, _ = process.communicate(timeout=5)
+        return output or b""
+    except subprocess.TimeoutExpired as exc:
+        partial = exc.output or b""
+        try:
+            if os.name == "posix":
+                os.killpg(process.pid, signal.SIGKILL)
+            else:
+                process.kill()
+        except (ProcessLookupError, OSError):
+            pass
+        output, _ = process.communicate()
+        return output or partial
 
 
 def run_sample(sample: Path, output_root: Path, timeout: int) -> dict:
@@ -34,21 +80,27 @@ def run_sample(sample: Path, output_root: Path, timeout: int) -> dict:
         "luauvmp", "luraph-full", str(sample),
         "-o", str(output), "--force", "--timeout", str(timeout),
     ]
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        env=env,
+        start_new_session=(os.name == "posix"),
+    )
+    timed_out = False
     try:
-        completed = subprocess.run(
-            command,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            env=env,
-            timeout=timeout + 60,
-            check=False,
-        )
-        log = completed.stdout
-        returncode = completed.returncode
+        output_bytes, _ = process.communicate(timeout=timeout + 30)
     except subprocess.TimeoutExpired as exc:
-        log = (exc.stdout or "") + "\nCORPUS RUNNER TIMEOUT\n"
-        returncode = 124
+        timed_out = True
+        partial = exc.output or b""
+        stopped = _stop_process(process)
+        # communicate() normally returns the complete buffered stream after a
+        # timeout. Keep the larger value to avoid duplicating the prefix.
+        output_bytes = stopped if len(stopped) >= len(partial) else partial
+    log = _text(output_bytes)
+    if timed_out:
+        log += "\nCORPUS RUNNER HARD TIMEOUT (%d seconds)\n" % (timeout + 30)
+    returncode = 124 if timed_out else int(process.returncode or 0)
     log_path.write_text(log, encoding="utf-8", errors="replace")
 
     record = {
@@ -58,11 +110,13 @@ def run_sample(sample: Path, output_root: Path, timeout: int) -> dict:
         "returncode": returncode,
         "elapsed_seconds": round(time.monotonic() - started, 3),
         "log": log_path.name,
+        "last_progress": _last_progress(log),
+        "timed_out": timed_out,
         "ok": False,
     }
     pipeline_path = output / "pipeline.json"
     if returncode != 0 or not pipeline_path.is_file():
-        record["error"] = "pipeline command failed"
+        record["error"] = "pipeline command timed out" if timed_out else "pipeline command failed"
         return record
 
     pipeline = json.loads(pipeline_path.read_text(encoding="utf-8"))
@@ -95,13 +149,26 @@ def run_sample(sample: Path, output_root: Path, timeout: int) -> dict:
     return record
 
 
+def _print_failure_tail(record: dict, output_root: Path, lines: int = 30) -> None:
+    if record.get("ok"):
+        return
+    log_path = output_root / str(record["log"])
+    if not log_path.is_file():
+        return
+    tail = log_path.read_text(encoding="utf-8", errors="replace").splitlines()[-lines:]
+    print("--- %s failure tail ---" % record["sample"], flush=True)
+    for line in tail:
+        print(line, flush=True)
+    print("--- end failure tail ---", flush=True)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser()
     parser.add_argument("samples", type=Path)
     parser.add_argument("-o", "--output", type=Path, required=True)
     parser.add_argument("--shard-index", type=int, default=0)
     parser.add_argument("--shard-count", type=int, default=1)
-    parser.add_argument("--timeout", type=int, default=180)
+    parser.add_argument("--timeout", type=int, default=60)
     args = parser.parse_args(argv)
 
     if args.shard_count < 1 or not 0 <= args.shard_index < args.shard_count:
@@ -117,20 +184,22 @@ def main(argv: list[str] | None = None) -> int:
         record = run_sample(sample, args.output, args.timeout)
         records.append(record)
         print(json.dumps(record, sort_keys=True), flush=True)
+        _print_failure_tail(record, args.output)
 
     summary = {
-        "format_version": 1,
+        "format_version": 2,
         "shard_index": args.shard_index,
         "shard_count": args.shard_count,
         "samples": len(records),
         "passed": sum(bool(record["ok"]) for record in records),
         "failed": sum(not bool(record["ok"]) for record in records),
+        "timeouts": sum(bool(record.get("timed_out")) for record in records),
         "records": records,
     }
     (args.output / "summary.json").write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
     )
-    print(json.dumps({key: summary[key] for key in ("samples", "passed", "failed")},
+    print(json.dumps({key: summary[key] for key in ("samples", "passed", "failed", "timeouts")},
                      sort_keys=True))
     return 1 if summary["failed"] else 0
 
