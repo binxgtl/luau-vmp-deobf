@@ -11,6 +11,7 @@ import re
 
 from . import luraph_lift
 from .luraph_lift_return_prefix import install as _install_return_prefix
+from .luraph_lift_runtime_builtins import install as _install_runtime_builtins
 
 
 _INSTALLED = False
@@ -55,4 +56,5 @@ def install() -> None:
     _ORIGINAL_CLEAN = luraph_lift.clean_statement
     luraph_lift.clean_statement = clean_statement
     _install_return_prefix()
+    _install_runtime_builtins()
     _INSTALLED = True
