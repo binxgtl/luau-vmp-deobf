@@ -77,10 +77,12 @@ _install_capture_completion()
 from .luraph_semantic_normalize import install as _install_semantic_normalize
 from .luraph_semantic_normalize_fix import install as _install_semantic_normalize_fix
 from .luraph_semantic_shape_fix import install as _install_semantic_shape_fix
+from .luraph_public_string_eval import install as _install_public_string_eval
 
 _install_semantic_normalize()
 _install_semantic_normalize_fix()
 _install_semantic_shape_fix()
+_install_public_string_eval()
 
 # Version 0.5.0 used a no-op setfenv in the staged finaliser, which caused
 # environment-wrapper anti-tamper loops. Preserve real rebinding while keeping
