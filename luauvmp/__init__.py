@@ -84,6 +84,13 @@ _install_semantic_normalize_fix()
 _install_semantic_shape_fix()
 _install_public_string_eval()
 
+# Thousands of recovered CFG leaders must not become one recursively nested
+# Luau elseif chain. Keep each PC dispatch chunk bounded without changing any
+# block body or branch semantics.
+from .luraph_decompiler_balance import install as _install_decompiler_balance
+
+_install_decompiler_balance()
+
 # Version 0.5.0 used a no-op setfenv in the staged finaliser, which caused
 # environment-wrapper anti-tamper loops. Preserve real rebinding while keeping
 # every getfenv lookup inside the closed sandbox.
