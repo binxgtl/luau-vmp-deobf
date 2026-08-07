@@ -1,15 +1,15 @@
 """Infer randomized public-v14.7 prototype-table layouts from the factory.
 
 Luraph randomizes not only opcode numbers and local names but also the physical
-slots that hold the per-instruction arrays.  Older capture code assumed the
+slots that hold the per-instruction arrays. Older capture code assumed the
 layout used by one private fixture (opcode slot 4, operand slots
-2/6/7/8/9/11).  Two public families instead use opcode slots 8 and 1.
+2/6/7/8/9/11). Two public families instead use opcode slots 8 and 1.
 
 The interpreter factory is authoritative: its dispatcher reads one physical
 array as ``opcode_array[pc]`` and the six operand arrays are indexed by the same
-program counter.  This module derives that layout statically, remaps capture to
+program counter. This module derives that layout statically, remaps capture to
 the existing canonical typed IR, and applies the same mapping to recovered
-semantic text.  No recovered closure is executed by the inference itself.
+semantic text. No recovered closure is executed by the inference itself.
 """
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ class ProtoLayout:
         return dict(self.field_locals)
 
 
-def infer_layout(factory_source: str) -> Optional[ProtoLayout]:
+def _layout_evidence(factory_source: str):
     metadata = normalize._metadata(factory_source)
     if metadata.get("PUBLIC_V147") != "1":
         return None
@@ -61,7 +61,6 @@ def infer_layout(factory_source: str) -> Optional[ProtoLayout]:
     if not arguments:
         raise luraph_capture.CaptureError("public factory has no prototype argument")
     proto_name = arguments[0]
-
     dispatch, opcode_array, pc_name = normalize._dispatch_shape(
         factory_source, opcode_name
     )
@@ -72,6 +71,15 @@ def infer_layout(factory_source: str) -> Optional[ProtoLayout]:
         raise luraph_capture.CaptureError(
             "public opcode array could not be mapped back to a prototype field"
         )
+    return metadata, arguments, dispatch, opcode_name, opcode_array, pc_name, fields, opcode_field
+
+
+def infer_layout(factory_source: str) -> Optional[ProtoLayout]:
+    evidence = _layout_evidence(factory_source)
+    if evidence is None:
+        return None
+    (_metadata, _arguments, dispatch, opcode_name, opcode_array,
+     pc_name, fields, opcode_field) = evidence
 
     body = factory_source[dispatch.start():]
     pc_indexed = []
@@ -85,7 +93,7 @@ def infer_layout(factory_source: str) -> Optional[ProtoLayout]:
 
     candidates = sorted(field for field in pc_indexed if field != opcode_field)
     # The private/reference layout also carries an instruction-indexed debug
-    # table in physical field 1.  Keep the already verified six operand slots
+    # table in physical field 1. Keep the already verified six operand slots
     # when that exact layout is present, and ignore the extra debug array.
     if opcode_field == 4 and all(field in candidates for field in _LEGACY_OPERANDS):
         operand_fields = _LEGACY_OPERANDS
@@ -206,8 +214,28 @@ end''' % (
     return runner
 
 
+def _reference_layout_partial(factory_source: str) -> bool:
+    """Return true only when structural evidence proves reference opcode field 4.
+
+    Small unit fixtures and diagnostic factories may omit unused operand-array
+    references from the dispatcher body. They are sufficient for the older role
+    inferencer but intentionally insufficient for dynamic capture remapping. Do
+    not weaken dynamic field-1/field-8 inference to accommodate those fixtures.
+    """
+    try:
+        evidence = _layout_evidence(factory_source)
+    except luraph_capture.CaptureError:
+        return False
+    return evidence is not None and evidence[-1] == 4
+
+
 def infer_canonical_variables(factory_source: str) -> Dict[str, str]:
-    layout = infer_layout(factory_source)
+    try:
+        layout = infer_layout(factory_source)
+    except luraph_capture.CaptureError:
+        if _reference_layout_partial(factory_source) and _ORIGINAL_INFER is not None:
+            return _ORIGINAL_INFER(factory_source)
+        raise
     if layout is None:
         # Non-public input keeps the existing reference behavior.
         return _ORIGINAL_INFER(factory_source) if _ORIGINAL_INFER else {}
@@ -219,7 +247,7 @@ def infer_canonical_variables(factory_source: str) -> Dict[str, str]:
     fields = layout.locals
 
     mapping: Dict[str, str] = {}
-    for (canonical_field, canonical_name), physical in zip(
+    for (_canonical_field, canonical_name), physical in zip(
         _CANONICAL_OPERANDS, layout.operand_fields
     ):
         actual = fields.get(physical)
