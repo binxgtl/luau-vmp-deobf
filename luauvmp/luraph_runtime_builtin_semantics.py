@@ -9,7 +9,7 @@ value extraction, strings/comments and unproven slots are left untouched.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict
+from typing import Dict, Optional
 import json
 import re
 
@@ -36,6 +36,7 @@ _ALLOWED = {
 
 def builtin_slots(path: Path) -> Dict[int, str]:
     result: Dict[int, str] = {}
+    ambiguous = set()
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         cols = line.split("\t")
         if len(cols) != 5 or cols[1] != "function" or not cols[2].startswith("builtin:"):
@@ -47,11 +48,12 @@ def builtin_slots(path: Path) -> Dict[int, str]:
             slot = int(cols[0])
         except ValueError:
             continue
+        if slot in ambiguous:
+            continue
         previous = result.get(slot)
         if previous is not None and previous != name:
-            # Runtime-fact output is expected to have one row per slot. If that
-            # invariant is ever violated, discard the ambiguous slot entirely.
             result.pop(slot, None)
+            ambiguous.add(slot)
             continue
         result[slot] = name
     return result
@@ -75,8 +77,6 @@ def rewrite_builtin_callees(source: str, slots: Dict[int, str]) -> str:
     if not slots:
         return source
     code = _code_only(source)
-    # Numeric spelling is already canonicalized by the earlier semantic passes,
-    # so runtime helper slots are decimal integers here.
     pattern = re.compile(
         r"(?<![A-Za-z0-9_])(?P<paren>\(\s*)?A\s*\[\s*(?P<slot>\d+)"
         r"(?:\.0)?\s*\](?(paren)\s*\))\s*(?=\()"
@@ -84,10 +84,7 @@ def rewrite_builtin_callees(source: str, slots: Dict[int, str]) -> str:
     pieces = []
     cursor = 0
     for match in pattern.finditer(code):
-        try:
-            slot = int(match.group("slot"))
-        except ValueError:
-            continue
+        slot = int(match.group("slot"))
         name = slots.get(slot)
         if name is None:
             continue
@@ -100,7 +97,7 @@ def rewrite_builtin_callees(source: str, slots: Dict[int, str]) -> str:
     return "".join(pieces)
 
 
-def _write_text(path: Path | None, data: dict) -> None:
+def _write_text(path: Optional[Path], data: dict) -> None:
     if path is None:
         return
     lines = []
