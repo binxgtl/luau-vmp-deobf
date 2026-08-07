@@ -35,7 +35,11 @@ def test_build_cfg_from_sample_local_semantics():
 def test_render_compile_target_lifts_common_operations():
     program, semantics = sample_program()
     source, metrics = render_program(program, semantics)
-    assert 'PROTO[0] = function(P, I, ...)' in source
+    assert 'PROTO[0] = function(__captured, __env, ...)' in source
+    assert 'local I = __captured or {}' in source
+    assert '__env = __env or getfenv()' in source
+    assert 'local function __upget(cell)' in source
+    assert 'local function __close_cell(cell)' in source
     assert 'R[0] = "game"' in source
     assert 'R[1] = R[0] + 4' in source
     assert 'if R[1] then pc = 5 else pc = 4 end' in source
