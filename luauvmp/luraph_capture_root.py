@@ -15,7 +15,59 @@ from . import luraph_capture
 _INSTALLED = False
 
 
-_RESOLVER = r'''local function resolveCaptureRoot(directRoot, runtimeState)
+_RESOLVER = r'''local function describeCaptureShape(label, value)
+    if type(value) ~= "table" then
+        status(label .. " shape: " .. type(value))
+        return
+    end
+    local fields = {}
+    for field = 1, 16 do
+        local cell = rawget(value, field)
+        local kind = type(cell)
+        if kind ~= "table" then
+            fields[#fields + 1] = tostring(field) .. ":" .. kind
+        else
+            local numbers, integers, strings, tables, other = 0, 0, 0, 0, 0
+            local minimum, maximum = nil, nil
+            local key = nil
+            local scanned = 0
+            while scanned < 64 do
+                local nextKey, item = next(cell, key)
+                if nextKey == nil then break end
+                key = nextKey
+                scanned += 1
+                local itemKind = type(item)
+                if itemKind == "number" then
+                    numbers += 1
+                    if item % 1 == 0 then integers += 1 end
+                    minimum = minimum == nil and item or math.min(minimum, item)
+                    maximum = maximum == nil and item or math.max(maximum, item)
+                elseif itemKind == "string" then
+                    strings += 1
+                elseif itemKind == "table" then
+                    tables += 1
+                else
+                    other += 1
+                end
+            end
+            local range = ""
+            if minimum ~= nil then
+                range = ",min=" .. tostring(minimum) .. ",max=" .. tostring(maximum)
+            end
+            fields[#fields + 1] = tostring(field)
+                .. ":table(len=" .. tostring(#cell)
+                .. ",scan=" .. tostring(scanned)
+                .. ",num=" .. tostring(numbers)
+                .. ",int=" .. tostring(integers)
+                .. ",str=" .. tostring(strings)
+                .. ",tab=" .. tostring(tables)
+                .. ",other=" .. tostring(other) .. range .. ")"
+        end
+    end
+    status(label .. " shape: " .. table.concat(fields, ";"))
+end
+
+local function resolveCaptureRoot(directRoot, runtimeState)
     if isProto(directRoot) then
         return directRoot
     end
@@ -113,6 +165,8 @@ _RESOLVER = r'''local function resolveCaptureRoot(directRoot, runtimeState)
             .. ", candidates=" .. tostring(#candidates)
             .. ", scanned_tables=" .. tostring(#queue)
     )
+    describeCaptureShape("direct root", directRoot)
+    describeCaptureShape("runtime state", runtimeState)
     return nil
 end
 
