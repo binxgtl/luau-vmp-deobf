@@ -122,10 +122,11 @@ local TaskCompat = table.freeze({
         marker = 'environment._G = environment\n\nlocal function safeLoadString'
         telemetry = r'''environment._G = environment
 
--- Constructor-bearing globals are deliberately not provided. Return a probe
--- only for the two observed names so blocked constructor calls report their
--- bounded argument list without constructing an object or widening capability.
-local blockedConstructorProbes = {}
+-- Missing Roblox/executor globals are never implemented here. A tiny family of
+-- fail-closed probes only names the exact operation that the parser attempted,
+-- with bounded argument text, then aborts. This keeps diagnostics useful while
+-- preserving the same no-capability boundary as returning nil.
+local blockedGlobalProbes = {}
 local function renderBlockedArgs(...)
     local input = table.pack(...)
     local parts = {}
@@ -143,8 +144,8 @@ local function renderBlockedArgs(...)
     return table.concat(parts, ", ")
 end
 
-local function blockedConstructorProbe(name)
-    local existing = blockedConstructorProbes[name]
+local function blockedObjectProbe(name)
+    local existing = blockedGlobalProbes[name]
     if existing ~= nil then return existing end
     local probe = setmetatable({}, {
         __index = function(_, member)
@@ -164,21 +165,39 @@ local function blockedConstructorProbe(name)
                 0
             )
         end,
-        __call = function()
-            error("safe-capture blocked call to missing global " .. name, 0)
+        __call = function(_, ...)
+            error(
+                "safe-capture blocked call to missing global " .. name .. "("
+                    .. renderBlockedArgs(...) .. ")",
+                0
+            )
         end,
         __metatable = "locked",
     })
-    blockedConstructorProbes[name] = probe
+    blockedGlobalProbes[name] = probe
     return probe
+end
+
+local function blockedFunctionProbe(name)
+    return function(...)
+        error(
+            "safe-capture blocked call to missing global " .. name .. "("
+                .. renderBlockedArgs(...) .. ")",
+            0
+        )
+    end
 end
 
 setmetatable(environment, {
     __index = function(_, key)
         local name = tostring(key)
         missingSafeGlobals[name] = true
-        if name == "Instance" or name == "Random" then
-            return blockedConstructorProbe(name)
+        if name == "Instance" or name == "Random"
+                or name == "game" or name == "workspace" then
+            return blockedObjectProbe(name)
+        end
+        if name == "identifyexecutor" or name == "iscclosure" or name == "islclosure" then
+            return blockedFunctionProbe(name)
         end
         return nil
     end,
