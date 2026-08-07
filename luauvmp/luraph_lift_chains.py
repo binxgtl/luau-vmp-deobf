@@ -30,6 +30,9 @@ def _compact(source: str) -> str:
     # Scratch locals are safe to unwrap for these exact straight-line shapes.
     for _ in range(3):
         text = re.sub(r"\(([A-Za-z_]\w*)\)", r"\1", text)
+        text = re.sub(
+            r"\(([A-Za-z_]\w*)\[([A-Za-z_]\w*)\]\)", r"\1[\2]", text
+        )
     return text
 
 
