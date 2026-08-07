@@ -11,6 +11,35 @@ def ins(**overrides):
     return Instruction(**values)
 
 
+def test_lifts_assignment_call_over_recovered_register_range():
+    source = '''
+        e=H[u];
+        t=(e+B[u]-1);
+        (c)[e]=c[e](table.unpack(c,e+1,t));
+        t=e;
+    '''
+    assert luraph_lift.clean_statement(source, ins(h=4, b=3)) == (
+        'R[4] = R[4](table.unpack(R, 4 + 1, 4 + 3 - 1))'
+    )
+
+
+def test_lifts_nonassigning_call_over_recovered_register_range():
+    source = '''
+        e=(p[u]);
+        t=e+B[u]-1;
+        c[e](table.unpack(c,e+1,t));
+        t=e-1;
+    '''
+    assert luraph_lift.clean_statement(source, ins(p=6, b=2)) == (
+        'R[6](table.unpack(R, 6 + 1, 6 + 2 - 1))'
+    )
+
+
+def test_range_call_requires_exact_interpreter_top_update():
+    source = 'e=H[u];t=e+B[u]-1;c[e]=c[e](table.unpack(c,e+1,t));t=e-1;'
+    assert luraph_lift.clean_statement(source, ins()) is None
+
+
 def test_lifts_recovered_pure_helper_table_lookup():
     source = (
         'c[p[u]]=({[5]=bit32.countlz,[6]=math.ceil,[11]=bit32.bxor,'
