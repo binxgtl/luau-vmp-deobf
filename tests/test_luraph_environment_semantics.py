@@ -68,6 +68,21 @@ def test_lifts_exact_getglobal_and_setglobal_shapes():
     ) == '__env["print"] = R[3]'
 
 
+def test_lifts_proven_environment_scratch_chain_without_dropping_state():
+    ins = _instruction()
+    lifted = env.clean_environment_statement(
+        'n=(__ENV); W=(E[u]); n=n[W];', ins
+    )
+    assert lifted == 'n = __env\nW = "print"\nn = n[W]'
+
+
+def test_environment_scratch_chain_rejects_unknown_locals():
+    ins = _instruction()
+    assert env.clean_environment_statement(
+        'mystery=(__ENV); W=(E[u]); mystery=mystery[W];', ins
+    ) is None
+
+
 def test_environment_proof_ignores_text_inside_strings_and_comments():
     vm = '''
         local text = [[ S=getfenv; (J)[5]=v.S ]]
