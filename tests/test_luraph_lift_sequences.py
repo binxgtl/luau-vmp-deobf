@@ -81,3 +81,46 @@ def test_lifts_tuple_style_environment_cell_index():
     assert luraph_lift.clean_statement(source, ins(o=5, underscore=6)) == (
         'R[6] = I[5][2][I[5][1]]'
     )
+
+
+def test_lifts_raw_cell_indexed_get_and_set():
+    get_source = 'M=I[H[u]]; c[_[u]]=M[2][M[1]][c[o[u]]];'
+    assert luraph_lift.clean_statement(
+        get_source, ins(h=5, underscore=6, o=7)
+    ) == 'R[6] = I[5][2][I[5][1]][R[7]]'
+
+    set_source = 'M=I[_[u]]; (M[2][M[1]])[c[o[u]]]=c[H[u]];'
+    assert luraph_lift.clean_statement(
+        set_source, ins(underscore=5, o=7, h=8)
+    ) == 'I[5][2][I[5][1]][R[7]] = R[8]'
+
+
+def test_lifts_raw_cell_value_set():
+    source = 'M=I[H[u]]; (M[2])[M[1]]=(c[_[u]]);'
+    assert luraph_lift.clean_statement(
+        source, ins(h=5, underscore=6)
+    ) == 'I[5][2][I[5][1]] = R[6]'
+
+
+def test_lifts_direct_capture_value_indexing():
+    get_source = 'c[o[u]]=(I[_[u]][c[H[u]]]);'
+    assert luraph_lift.clean_statement(
+        get_source, ins(o=4, underscore=5, h=6)
+    ) == 'R[4] = I[5][R[6]]'
+
+    set_source = '(I[_[u]])[c[o[u]]]=(c[H[u]]);'
+    assert luraph_lift.clean_statement(
+        set_source, ins(underscore=5, o=6, h=7)
+    ) == 'I[5][R[6]] = R[7]'
+
+
+def test_lifts_exact_capture_vector_scratch_staging():
+    assert luraph_lift.clean_statement(
+        'M=I; h=H[u];', ins(h=9)
+    ) == 'M = I; h = 9'
+    assert luraph_lift.clean_statement(
+        'n=(I); W=_[u]; n=n[W];', ins(underscore=4)
+    ) == 'n = I; W = 4; n = n[W]'
+    assert luraph_lift.clean_statement(
+        'h=_[u]; n=I; W=(H[u]);', ins(underscore=4, h=8)
+    ) == 'h = 4; n = I; W = 8'
