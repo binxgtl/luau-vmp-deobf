@@ -49,6 +49,12 @@ from .luraph_runtime_fix import install as _install_runtime_fix
 
 _install_runtime_fix()
 
+# Preserve recovered-VM line tables inside the same closed sandbox so ambiguous
+# parser errors name their exact source line without widening any capability.
+from .luraph_capture_diagnostics import install as _install_capture_diagnostics
+
+_install_capture_diagnostics()
+
 # A pre-bootstrap capture may intentionally terminate when the surrounding
 # wrapper later calls the disabled closure. Accept only that exact sentinel after
 # the typed IR, runtime facts, factory, patched VM and runner are independently
