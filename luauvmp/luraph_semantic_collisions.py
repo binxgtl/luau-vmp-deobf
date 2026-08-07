@@ -61,3 +61,9 @@ def install() -> None:
     _ORIGINAL = normalize.canonicalize_source
     normalize.canonicalize_source = canonicalize_source
     _INSTALLED = True
+
+    # Environment recovery depends on the final collision-safe identifier names.
+    # Install it here so existing package wiring remains the single entry point,
+    # while later lift wrappers can still compose around its clean-statement hook.
+    from .luraph_environment_semantics import install as _install_environment_semantics
+    _install_environment_semantics()
