@@ -11,6 +11,23 @@ def ins(**overrides):
     return Instruction(**values)
 
 
+def test_lifts_recovered_pure_helper_table_lookup():
+    source = (
+        'c[p[u]]=({[5]=bit32.countlz,[6]=math.ceil,[11]=bit32.bxor,'
+        '[14]=string.byte,[17]=string.len})[B[u]];'
+    )
+    assert luraph_lift.clean_statement(source, ins(p=4, b=11)) == (
+        'R[4] = bit32.bxor'
+    )
+
+
+def test_helper_lookup_fails_closed_for_missing_or_unsafe_entry():
+    missing = 'c[p[u]]=({[5]=bit32.countlz})[B[u]];'
+    assert luraph_lift.clean_statement(missing, ins(b=11)) is None
+    unsafe = 'c[p[u]]=({[11]=game.GetService})[B[u]];'
+    assert luraph_lift.clean_statement(unsafe, ins(b=11)) is None
+
+
 def test_lifts_register_pair_index_sequence():
     source = 'e=p[u]; N=c[B[u]]; c[e+1]=N; c[e]=N[_[u]];'
     assert luraph_lift.clean_statement(source, ins(p=4, b=8, underscore=2)) == (
