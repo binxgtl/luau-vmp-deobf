@@ -50,12 +50,12 @@ def test_unknown_superinstruction_is_preserved_as_compile_safe_data(tmp_path):
     ])
     metrics = write_decompiled(
         Program({0: proto}, 1),
-        {200: 'm=(o[u]); O=m+1; c[o[u]]=O;'},
+        {200: 'm=(o[u]); O=A[99](m); c[o[u]]=O;'},
         tmp_path,
     )
     text = (tmp_path / 'program.decompiled.luau').read_text()
-    assert 'do local __semantic_fallback = "m=(0); O=m+1; R[0]=O;" end' in text
-    assert '\n            m=(0);' not in text
+    assert 'do local __semantic_fallback = "m=(0); O=A[99](m); R[0]=O;" end' in text
+    assert '\n            O=A[99](m);' not in text
     assert metrics['fallback_instructions'] == 1
     assert metrics['clean_instructions'] == 0
 
