@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from typing import List, Sequence, Tuple
 
-from . import luraph_decompiler, luraph_lift, luraph_lift_pairs
+from . import luraph_decompiler, luraph_lift, luraph_lift_pairs, luraph_lift_chains
 
 
 _CHUNK_SIZE = 64
@@ -149,11 +149,12 @@ def install() -> None:
     global _ORIGINAL_RENDER, _INSTALLED
     if _INSTALLED:
         return
-    # Install the adjacent-pair hook here because this function is deliberately
-    # the final structural-wiring point before decompiler rendering. The hook is
-    # looked up dynamically by the backend and therefore cannot be snapshotted
-    # before installation.
+    # Install multi-instruction hooks here because this function is deliberately
+    # the final structural-wiring point before decompiler rendering. The hooks
+    # are looked up dynamically by the backend and therefore cannot be
+    # snapshotted before installation.
     luraph_lift_pairs.install()
+    luraph_lift_chains.install()
     # ``luraph_fallback_safety`` imports the decompiler before the public lift
     # wrappers are installed, so its module globals still point at the original
     # functions. Rebind to the final composed lifter here, after every lift pass
