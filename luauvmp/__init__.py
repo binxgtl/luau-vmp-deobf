@@ -95,8 +95,10 @@ _install_selected_dispatch_normalize()
 # roles into the canonical typed IR expected by the decompiler. The reference
 # layout remains byte-for-byte unchanged.
 from .luraph_proto_layout import install as _install_proto_layout
+from .luraph_proto_mode import install as _install_proto_mode
 
 _install_proto_layout()
+_install_proto_mode()
 
 # Thousands of recovered CFG leaders must not become one recursively nested
 # Luau elseif chain. Keep each PC dispatch chunk bounded without changing any
