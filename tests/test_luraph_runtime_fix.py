@@ -58,16 +58,25 @@ def test_safe_capture_exposes_only_inert_task_cancel():
     assert 'task.wait' not in environment
 
 
-def test_blocked_constructor_probe_names_the_global_without_adding_capability():
+def test_blocked_global_probes_name_operations_without_adding_capability():
     runner = luraph_capture.build_lune_runner(
         'vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv',
     )
+    assert 'local blockedGlobalProbes = {}' in runner
+    assert 'safe-capture blocked constructor ' in runner
     assert 'safe-capture blocked access to missing global ' in runner
+    assert 'safe-capture blocked call to missing global ' in runner
+    assert 'renderBlockedArgs(...)' in runner
     assert 'name == "Instance" or name == "Random"' in runner
+    assert 'or name == "game" or name == "workspace"' in runner
+    assert 'name == "identifyexecutor" or name == "iscclosure" or name == "islclosure"' in runner
     assert '__metatable = "locked"' in runner
 
-    environment = runner.split('local blockedConstructorProbes = {}', 1)[1]
+    environment = runner.split('local blockedGlobalProbes = {}', 1)[1]
     assert 'Instance.new' not in environment
     assert 'Random.new' not in environment
     assert 'robloxDatatypes.Instance' not in runner
     assert 'robloxDatatypes.Random' not in runner
+    assert 'environment.game =' not in runner
+    assert 'environment.workspace =' not in runner
+    assert 'environment.identifyexecutor =' not in runner
