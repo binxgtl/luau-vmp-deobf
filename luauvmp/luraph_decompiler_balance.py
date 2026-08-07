@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from typing import List, Sequence, Tuple
 
-from . import luraph_decompiler, luraph_lift
+from . import luraph_decompiler, luraph_lift, luraph_lift_pairs
 
 
 _CHUNK_SIZE = 64
@@ -32,7 +32,7 @@ def _parse_dispatch(lines: Sequence[str], start: int):
     """Parse one exact flat dispatcher emitted by ``decompile_proto``.
 
     Return ``(end, branches, invalid_body)`` where ``end`` is the line index of
-    the closing ``    end`` for ``while true do``.  Return ``None`` for anything
+    the closing ``    end`` for ``while true do``. Return ``None`` for anything
     not matching the backend's exact shape; unknown source is never rewritten.
     """
     if start + 2 >= len(lines) or lines[start] != "    while true do":
@@ -52,8 +52,6 @@ def _parse_dispatch(lines: Sequence[str], start: int):
             headers.append((cursor, int(match.group("pc"))))
         elif line == "        else":
             final_else = cursor
-            # The generated invalid-pc branch closes with exactly eight spaces,
-            # followed immediately by the four-space end of ``while true do``.
             probe = cursor + 1
             while probe < len(lines):
                 if lines[probe] == "        end":
@@ -64,15 +62,10 @@ def _parse_dispatch(lines: Sequence[str], start: int):
             break
         cursor += 1
 
-    if final_else is None or outer_if_end is None:
-        return None
-    if not headers:
+    if final_else is None or outer_if_end is None or not headers:
         return None
 
     pcs = [pc for _index, pc in headers]
-    # Range chunking is only semantics-preserving when program-counter leaders
-    # are monotonically ordered.  The normal typed IR has this property; fail
-    # closed by leaving an exotic order untouched instead of guessing.
     if pcs != sorted(pcs) or len(set(pcs)) != len(pcs):
         return None
 
@@ -156,6 +149,11 @@ def install() -> None:
     global _ORIGINAL_RENDER, _INSTALLED
     if _INSTALLED:
         return
+    # Install the adjacent-pair hook here because this function is deliberately
+    # the final structural-wiring point before decompiler rendering. The hook is
+    # looked up dynamically by the backend and therefore cannot be snapshotted
+    # before installation.
+    luraph_lift_pairs.install()
     # ``luraph_fallback_safety`` imports the decompiler before the public lift
     # wrappers are installed, so its module globals still point at the original
     # functions. Rebind to the final composed lifter here, after every lift pass
