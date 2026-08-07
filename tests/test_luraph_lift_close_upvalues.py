@@ -37,7 +37,7 @@ def test_infers_single_stream_close_layout_without_outer_guard():
 
     lifted = close.lift_close_prefix(source, _ins(underscore=5))
     assert lifted is not None
-    assert "local O=5" in lifted.replace(" ", "")
+    assert "localO=5" in lifted.replace(" ", "")
     assert "for __close_reg, __close_cell in __s_B do" in lifted
     assert "__close_cell[2] = __close_cell" in lifted
     assert "__close_cell[3] = R[__close_reg]" in lifted
@@ -117,9 +117,10 @@ def test_close_return_wrapper_preserves_order_and_multi_return():
     result = close.return_expression(source, _ins(h=4, underscore=9))
     assert result is not None
     assert result.startswith("(function()")
-    assert "local O=4" in result.replace(" ", "")
-    assert "M=9" in result.replace(" ", "")
-    assert "return false,M,M" in result
+    normalized = result.replace(" ", "")
+    assert "localO=4" in normalized
+    assert "M=9" in normalized
+    assert "returnfalse,M,M" in normalized
     assert result.endswith("end)()")
 
 
