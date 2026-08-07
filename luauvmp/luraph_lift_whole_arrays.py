@@ -11,10 +11,10 @@ No recovered application code is executed by this module.
 """
 from __future__ import annotations
 
-from typing import Dict, Iterable, Mapping, Optional, Set
+from typing import Iterable, Mapping, Optional, Set
 import re
 
-from . import luraph_decompiler, luraph_lift
+from . import luraph_decompiler, luraph_lift, luraph_lift_sequences
 from .luraph_full import Instruction, Proto, Program, Value, render_value
 
 
@@ -24,7 +24,6 @@ _ORIGINAL_DECOMPILE_PROTO = None
 _ORIGINAL_RENDER_PROGRAM = None
 
 _ARRAY_FIELDS = ("E", "L", "p", "o", "H", "_", "B")
-_OPERAND_FIELDS = ("E", "p", "o", "H", "_", "B")
 _WHOLE_ASSIGN = re.compile(
     r"^R\[@(?P<dst>[EpoH_B])\]=(?P<src>E|L|p|o|H|_|B)$"
 )
@@ -141,6 +140,9 @@ def install() -> None:
     global _INSTALLED, _ORIGINAL_CLEAN, _ORIGINAL_DECOMPILE_PROTO, _ORIGINAL_RENDER_PROGRAM
     if _INSTALLED:
         return
+    # Compose the exact randomized scratch-sequence lifter before this outer
+    # whole-array wrapper captures the current clean_statement implementation.
+    luraph_lift_sequences.install()
     _ORIGINAL_CLEAN = luraph_lift.clean_statement
     luraph_lift.clean_statement = clean_statement
 
