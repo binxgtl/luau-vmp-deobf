@@ -15,7 +15,9 @@ def test_compact_removes_parentheses_around_scratch_atoms_only():
     assert luraph_lift.compact('N=(H[u]); I=(x); R0=(x[j]);') == (
         'N=@H;I=x;R0=x[j];'
     )
-    assert '(x+@B-1)' in luraph_lift.compact('t=(x+B[u]-1);')
+    # The pre-existing base compact layer already removes parentheses that wrap
+    # an entire assignment RHS. The atom layer must not alter the arithmetic.
+    assert luraph_lift.compact('t=(x+B[u]-1);') == 't=x+@B-1;'
     assert 'f(x)' in luraph_lift.compact('y=f(x);')
 
 
