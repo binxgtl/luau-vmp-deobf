@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Optional
 import re
 
-from . import luraph_capture
+from . import luraph_capture, luraph_nested_helper_literals
 from . import luraph_semantic_normalize as normalize
 
 _INSTALLED = False
@@ -89,6 +89,9 @@ def install() -> None:
     global _INSTALLED, _ORIGINAL_BUILDER
     if _INSTALLED:
         return
+    # This module is installed after selected-dispatch semantic normalization,
+    # so the helper-literal wrapper sees final canonical A/operand names.
+    luraph_nested_helper_literals.install()
     _ORIGINAL_BUILDER = luraph_capture.build_lune_runner
     luraph_capture.build_lune_runner = build_lune_runner
     _INSTALLED = True
