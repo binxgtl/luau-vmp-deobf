@@ -84,6 +84,14 @@ _install_semantic_normalize_fix()
 _install_semantic_shape_fix()
 _install_public_string_eval()
 
+# Public v14.7 also randomizes the physical prototype-table layout. Infer the
+# opcode/operand fields from the same factory and remap both capture and semantic
+# roles into the canonical typed IR expected by the decompiler. The reference
+# layout remains byte-for-byte unchanged.
+from .luraph_proto_layout import install as _install_proto_layout
+
+_install_proto_layout()
+
 # Thousands of recovered CFG leaders must not become one recursively nested
 # Luau elseif chain. Keep each PC dispatch chunk bounded without changing any
 # block body or branch semantics.
