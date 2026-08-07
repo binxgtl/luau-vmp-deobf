@@ -82,6 +82,7 @@ from .luraph_integral_literals import install as _install_integral_literals
 from .luraph_dispatch_typefacts import install as _install_dispatch_typefacts
 from .luraph_dispatch_select import install as _install_dispatch_select
 from .luraph_selected_dispatch_normalize import install as _install_selected_dispatch_normalize
+from .luraph_semantic_collisions import install as _install_semantic_collisions
 
 _install_semantic_normalize()
 _install_semantic_normalize_fix()
@@ -91,6 +92,7 @@ _install_integral_literals()
 _install_dispatch_typefacts()
 _install_dispatch_select()
 _install_selected_dispatch_normalize()
+_install_semantic_collisions()
 
 # Public v14.7 also randomizes the physical prototype-table layout. Infer the
 # opcode/operand fields from the same factory and remap both capture and semantic
