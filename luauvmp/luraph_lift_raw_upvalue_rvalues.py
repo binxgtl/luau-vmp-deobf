@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 from . import luraph_lift
+from .luraph_lift_return_prefix import install as _install_return_prefix
 
 
 _INSTALLED = False
@@ -53,4 +54,5 @@ def install() -> None:
         return
     _ORIGINAL_CLEAN = luraph_lift.clean_statement
     luraph_lift.clean_statement = clean_statement
+    _install_return_prefix()
     _INSTALLED = True
