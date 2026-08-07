@@ -30,6 +30,8 @@ from . import (
     luraph_lift_raw_upvalue_rvalues,
     luraph_vararg_semantics,
     luraph_vararg_compact_fix,
+    luraph_runtime_coroutine_identities,
+    luraph_lift_generic_for_state,
 )
 
 
@@ -152,8 +154,15 @@ def install() -> None:
     global _ORIGINAL_RENDER, _INSTALLED
     if _INSTALLED:
         return
+    # Identity-only coroutine telemetry must be installed before vararg semantics
+    # installs the shared runtime-identity capture wrapper.
+    luraph_runtime_coroutine_identities.install()
     luraph_vararg_semantics.install()
     luraph_vararg_compact_fix.install()
+    # At this point direct A[slot](...) calls with proven runtime identities have
+    # already been literalized, so generic-for setup/step can require explicit
+    # coroutine.wrap/yield names rather than randomized slot numbers.
+    luraph_lift_generic_for_state.install()
     luraph_lift_pairs.install()
     luraph_lift_chains.install()
     luraph_lift_forloops.install()
