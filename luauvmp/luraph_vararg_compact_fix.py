@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from . import luraph_vararg_semantics as vararg
+from .luraph_vararg_factory_fix import install as _install_factory_fix
 
 
 _INSTALLED = False
@@ -31,5 +32,6 @@ def install() -> None:
     global _INSTALLED
     if _INSTALLED:
         return
+    _install_factory_fix()
     vararg._compact = compact
     _INSTALLED = True
