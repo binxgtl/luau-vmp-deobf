@@ -1,8 +1,8 @@
 """Replace sample-local VM helper lookups with pure Luau operations.
 
 Public v14.7 stores bit32/string/math helpers in a randomized nested ``A`` table
-and also randomizes the top-level helper used to unpack a register range.  The
-nested slot map is already recovered into factory metadata.  The range helper is
+and also randomizes the top-level helper used to unpack a register range. The
+nested slot map is already recovered into factory metadata. The range helper is
 identified structurally from the recovered VM: it has three parameters, defaults
 one parameter to ``1``, defaults another to ``#table``, and dispatches between
 fast/recursive unpack paths based on that range length.
@@ -17,7 +17,7 @@ from typing import Dict, Optional, Tuple
 import json
 import re
 
-from . import luraph_recover
+from . import luraph_capture, luraph_recover
 from . import luraph_semantic_normalize as normalize
 
 _INSTALLED = False
@@ -46,14 +46,21 @@ def _helper_literal(entries: Dict[int, str]) -> str:
 
 
 def _compact_for_shape(text: str) -> str:
-    return re.sub(r"\s+", "", text).replace("_", "")
+    compact = re.sub(r"\s+", "", text)
+    # Luau permits numeric separators (0b0_1, 0x1_F3D, 7_997). Normalize only
+    # numeric tokens; never strip underscores from randomized identifiers.
+    return re.sub(
+        _NUMBER,
+        lambda match: match.group(0).replace("_", ""),
+        compact,
+    )
 
 
 def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
     """Return ``slot -> (table_arg, start_arg, end_arg)`` for proven unpackers.
 
     The argument ordering varies between public builds, so it is recovered from
-    the body instead of assumed.  Ambiguous duplicate slots are rejected.
+    the body instead of assumed. Ambiguous duplicate slots are rejected.
     """
     assignment = re.compile(
         r"(?P<table>[A-Za-z_]\w*)\s*\[\s*(?P<slot>" + _NUMBER + r")\s*\]"
@@ -63,16 +70,22 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
     result: Dict[int, Tuple[int, int, int]] = {}
     for match in assignment.finditer(vm_source):
         args = [item.strip() for item in match.group("args").split(",") if item.strip()]
-        if len(args) != 3 or any(re.fullmatch(r"[A-Za-z_]\w*", arg) is None for arg in args):
+        if len(args) != 3 or any(
+            re.fullmatch(r"[A-Za-z_]\w*", arg) is None for arg in args
+        ):
             continue
-        # The wrappers observed in v14.7 are short.  A bounded window avoids
+        # The wrappers observed in v14.7 are short. A bounded window avoids
         # accidentally matching defaults from a later unrelated function.
         body = vm_source[match.end():match.end() + 900]
         compact = _compact_for_shape(body)
 
         start_name = None
         for arg in args:
-            if re.search(r"\b" + re.escape(arg) + r"=" + re.escape(arg) + r"or(?:0[bB]1|0[xX]1|1(?:\.0)?)", compact):
+            if re.search(
+                r"\b" + re.escape(arg) + r"=" + re.escape(arg)
+                + r"or(?:0[bB]1|0[xX]1|1(?:\.0)?)",
+                compact,
+            ):
                 start_name = arg
                 break
         if start_name is None:
@@ -85,7 +98,8 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
                     continue
                 if re.search(
                     r"\b" + re.escape(end) + r"=" + re.escape(end)
-                    + r"or#" + re.escape(table) + r"\b", compact,
+                    + r"or#" + re.escape(table) + r"\b",
+                    compact,
                 ):
                     end_name, table_name = end, table
                     break
@@ -96,13 +110,9 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
         if len({start_name, end_name, table_name}) != 3:
             continue
 
-        # Require the characteristic bounded fast-path test. Numeric spelling
-        # may be decimal/hex/binary after unpacking, but all v14.7 wrappers use
-        # the same 7997 range threshold.
         normalized = compact.replace(".0", "")
-        expr_a = end_name + "-" + start_name + "+1"
-        expr_b = "(" + expr_a + ")"
-        if expr_a not in normalized and expr_b not in normalized:
+        expr = end_name + "-" + start_name + "+1"
+        if expr not in normalized and ("(" + expr + ")") not in normalized:
             continue
         if "7997" not in normalized and "0x1f3d" not in normalized.lower():
             continue
@@ -112,9 +122,11 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
         slot = normalize._integer(match.group("slot"))
         if slot is None:
             continue
-        roles = (args.index(table_name), args.index(start_name), args.index(end_name))
+        roles = (
+            args.index(table_name), args.index(start_name), args.index(end_name)
+        )
         if slot in result and result[slot] != roles:
-            raise luraph_recover.luraph_capture.CaptureError(
+            raise luraph_capture.CaptureError(
                 "ambiguous public range-helper argument order for slot %d" % slot
             )
         result[slot] = roles
@@ -156,10 +168,14 @@ def _split_args(text: str) -> Optional[list[str]]:
     return parts
 
 
-def _rewrite_range_calls(source: str, direct: Dict[int, Tuple[int, int, int]]) -> str:
+def _rewrite_range_calls(
+    source: str, direct: Dict[int, Tuple[int, int, int]]
+) -> str:
     text = source
     for slot, roles in sorted(direct.items()):
-        prefix = re.compile(r"\bA\s*\[\s*" + str(slot) + r"(?:\.0)?\s*\]\s*\(")
+        prefix = re.compile(
+            r"\bA\s*\[\s*" + str(slot) + r"(?:\.0)?\s*\]\s*\("
+        )
         cursor = 0
         pieces = []
         changed = False
@@ -196,9 +212,10 @@ def _rewrite_range_calls(source: str, direct: Dict[int, Tuple[int, int, int]]) -
                 cursor = index
                 continue
             table_i, start_i, end_i = roles
-            pieces.append("table.unpack(%s,%s,%s)" % (
-                args[table_i], args[start_i], args[end_i]
-            ))
+            pieces.append(
+                "table.unpack(%s,%s,%s)"
+                % (args[table_i], args[start_i], args[end_i])
+            )
             changed = True
             cursor = index
         rewritten = "".join(pieces)
@@ -207,8 +224,11 @@ def _rewrite_range_calls(source: str, direct: Dict[int, Tuple[int, int, int]]) -
     return text
 
 
-def rewrite_source(source: str, nested: Dict[int, Dict[int, str]],
-                   direct: Optional[Dict[int, Tuple[int, int, int]]] = None) -> str:
+def rewrite_source(
+    source: str,
+    nested: Dict[int, Dict[int, str]],
+    direct: Optional[Dict[int, Tuple[int, int, int]]] = None,
+) -> str:
     text = source
     for table, entries in sorted(nested.items()):
         if not entries:
@@ -219,9 +239,8 @@ def rewrite_source(source: str, nested: Dict[int, Dict[int, str]],
             r"\[\s*(?P<field>" + _FIELD + r")\s*\[\s*u\s*\]\s*\]"
         )
         text = pattern.sub(
-            lambda match, value=literal: "(%s)[%s[u]]" % (
-                value, match.group("field")
-            ),
+            lambda match, value=literal: "(%s)[%s[u]]"
+            % (value, match.group("field")),
             text,
         )
     if direct:
@@ -250,9 +269,10 @@ def _rewrite_output(output: Path, text_output: Optional[Path], nested, direct):
         lines = []
         for opcode in sorted(int(key) for key in data):
             item = data[str(opcode)]
-            lines.append("=== OPCODE %d | unknown_if=%s ===" % (
-                opcode, item.get("unknown_ifs", 0)
-            ))
+            lines.append(
+                "=== OPCODE %d | unknown_if=%s ==="
+                % (opcode, item.get("unknown_ifs", 0))
+            )
             lines.append(item.get("source", ""))
             lines.append("")
         text_output.write_text("\n".join(lines), encoding="utf-8")
@@ -264,14 +284,20 @@ def recover_dispatch(factory, runtime_facts, output, text_output=None):
     factory_path = Path(factory)
     nested = _nested_helpers(factory_path)
     vm_path = factory_path.with_name("interpreter.vm.luau")
-    direct = infer_range_helpers(
-        vm_path.read_text(encoding="utf-8", errors="surrogateescape")
-    ) if vm_path.is_file() else {}
+    direct = (
+        infer_range_helpers(
+            vm_path.read_text(encoding="utf-8", errors="surrogateescape")
+        )
+        if vm_path.is_file()
+        else {}
+    )
     if not nested and not direct:
         return result
     return _rewrite_output(
-        Path(output), Path(text_output) if text_output is not None else None,
-        nested, direct,
+        Path(output),
+        Path(text_output) if text_output is not None else None,
+        nested,
+        direct,
     )
 
 
