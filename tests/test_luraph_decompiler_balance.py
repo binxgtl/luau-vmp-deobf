@@ -1,3 +1,4 @@
+from luauvmp import luraph_decompiler, luraph_lift
 from luauvmp import luraph_decompiler_balance as balance
 
 
@@ -18,6 +19,12 @@ def _flat_dispatch(count):
         '',
     ])
     return '\n'.join(lines)
+
+
+def test_decompiler_uses_final_composed_lifter():
+    assert luraph_decompiler.clean_statement is luraph_lift.clean_statement
+    assert luraph_decompiler.decode_branch is luraph_lift.decode_branch
+    assert luraph_decompiler.return_expression is luraph_lift.return_expression
 
 
 def test_small_dispatch_is_left_byte_for_byte_unchanged():
