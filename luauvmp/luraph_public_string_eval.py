@@ -1,4 +1,4 @@
-"""Pure Luau string helpers used by public-v14.7 dispatcher arithmetic.
+r"""Pure Luau string helpers used by public-v14.7 dispatcher arithmetic.
 
 The dispatcher hides control-state constants behind ``string.unpack`` calls and
 Luau-specific string escapes.  Python's ``unicode_escape`` disagrees with Luau
@@ -96,10 +96,6 @@ def _decode_luau_quoted(token: str) -> str:
             out.append("\n")
             index += 1
             continue
-        # Luau's generated loaders occasionally use an implementation-specific
-        # escaped printable character.  Keeping the character (rather than the
-        # backslash) matches the loader's own decoder behavior and is also the
-        # conservative representation for format strings.
         out.append(esc)
         index += 1
     return "".join(out)
@@ -139,9 +135,6 @@ def _integer_format(fmt: str):
         if fmt[0] == ">":
             endian = "big"
         index = 1
-    # Generated Luraph state constants use fixed-width integer formats.  Keep
-    # the evaluator intentionally narrow and fall back to UNKNOWN for anything
-    # else rather than approximating Lua's alignment/string rules.
     match = re.fullmatch(r"([iI])(\d+)", fmt[index:])
     if match is None:
         return None
