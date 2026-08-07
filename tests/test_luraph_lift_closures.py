@@ -31,23 +31,23 @@ def test_infers_single_stream_closure_shape_and_materializes_descriptors():
         W=n>0 and {};
         z=A[59](M,W);
         (A[5])(z,__ENV);
-        c[H[u]]=z;
+        (c)[H[u]]=(z);
         if W then
             for q=1,n do
                 z=h[q];
-                M=z[2];
-                V=z[1];
+                M=(z[2]);
+                V=(z[1]);
                 if M==0 then
-                    Y=cache[V];
+                    Y=(cache[V]);
                     if not Y then
                         Y={[2]=c,[1]=V};
                         cache[V]=Y;
                     end
-                    W[q-1]=Y;
+                    (W)[q-1]=(Y);
                 elseif M==1 then
-                    W[q-1]=c[V];
+                    W[q-1]=(c[V]);
                 else
-                    W[q-1]=I[V];
+                    (W)[q-1]=I[V];
                 end
             end
         end
@@ -108,10 +108,10 @@ def test_infers_randomized_descriptor_keys_and_cell_layout():
                         cell={[3]=reg,[1]=c};
                         n[reg]=cell;
                     end
-                    caps[h-1]=cell;
+                    (caps)[h-1]=cell;
                 else
                     if mode==1 then caps[h-1]=c[reg];
-                    else caps[h-1]=I[reg]; end
+                    else (caps)[h-1]=I[reg]; end
                 end
             end
         end
@@ -133,7 +133,7 @@ def test_closure_lift_fails_closed_for_missing_or_malformed_child_metadata():
         if caps then for i=1,n do row=d[i]; mode=row[2]; reg=row[1];
             if mode==0 then cell=cache[reg]; if not cell then
                 cell={[2]=c,[1]=reg}; cache[reg]=cell; end caps[i-1]=cell;
-            elseif mode==1 then caps[i-1]=c[reg]; else caps[i-1]=I[reg]; end
+            elseif mode==1 then (caps)[i-1]=c[reg]; else caps[i-1]=I[reg]; end
         end end
     '''
     ins = Instruction(0, 1, None, 1, None, None, 2, None, ProtoRef(1))
