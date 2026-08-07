@@ -257,11 +257,13 @@ def _candidate_shapes(source: str) -> List[ClosureShape]:
             continue
         cache, open_table_key, open_index_key = cell_candidates[0]
 
-        # Every loop arm must write the same zero-based capture slot. This also
-        # proves that the final else is the inherited-upvalue capture mode.
+        # Every loop arm must write the same zero-based capture slot. Parentheses
+        # around the already-proven capture-vector identifier are cosmetic Luau
+        # grouping and are accepted, but arbitrary expressions are not.
+        capture_base = r"(?:\(\s*" + re.escape(caps) + r"\s*\)|\b" + re.escape(caps) + r")"
         capture_slot = (
-            r"\b" + re.escape(caps) + r"\s*\[\s*"
-            + re.escape(loop_name) + r"\s*-\s*1(?:\.0)?\s*\]"
+            capture_base + r"\s*\[\s*" + re.escape(loop_name)
+            + r"\s*-\s*1(?:\.0)?\s*\]"
         )
         if len(re.findall(capture_slot + r"\s*=", body, re.S)) < 3:
             continue
@@ -287,12 +289,6 @@ def _candidate_shapes(source: str) -> List[ClosureShape]:
 def infer_closure_shape(source: str) -> Optional[ClosureShape]:
     shapes = _candidate_shapes(source)
     return shapes[0] if len(shapes) == 1 else None
-
-
-def _descriptor_literal(descriptors: List[Tuple[int, int]]) -> str:
-    return "{" + ",".join(
-        "{%d,%d}" % (mode, register) for mode, register in descriptors
-    ) + "}"
 
 
 def lift_closure(source: str, ins: Instruction, program: Program) -> Optional[str]:
