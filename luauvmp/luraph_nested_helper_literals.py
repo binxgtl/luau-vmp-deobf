@@ -62,10 +62,13 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
     """Return ``slot -> (table_arg, start_arg, end_arg)`` for proven unpackers.
 
     The argument ordering varies between public builds, so it is recovered from
-    the body instead of assumed. Ambiguous duplicate slots are rejected.
+    the body instead of assumed. Cosmetic parentheses around the helper table or
+    an ``arg or 1`` default are accepted, but all semantic evidence is still
+    required. Ambiguous duplicate slots are rejected.
     """
     assignment = re.compile(
-        r"(?P<table>[A-Za-z_]\w*)\s*\[\s*(?P<slot>" + _NUMBER + r")\s*\]"
+        r"(?:\(\s*)?(?P<table>[A-Za-z_]\w*)\s*(?:\)\s*)?"
+        r"\[\s*(?P<slot>" + _NUMBER + r")\s*\]"
         r"\s*=\s*\(?\s*function\s*\((?P<args>[^)]*)\)",
         re.S,
     )
@@ -81,7 +84,8 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
         start_name = None
         for arg in args:
             if re.search(
-                r"\b" + re.escape(arg) + r"=" + re.escape(arg) + r"or1\b",
+                r"\b" + re.escape(arg) + r"=\(?" + re.escape(arg)
+                + r"or1\)?(?:;|\b)",
                 compact,
             ):
                 start_name = arg
@@ -95,8 +99,8 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
                 if end == table:
                     continue
                 if re.search(
-                    r"\b" + re.escape(end) + r"=" + re.escape(end)
-                    + r"or#" + re.escape(table) + r"\b",
+                    r"\b" + re.escape(end) + r"=\(?" + re.escape(end)
+                    + r"or#" + re.escape(table) + r"\)?(?:;|\b)",
                     compact,
                 ):
                     end_name, table_name = end, table
@@ -169,7 +173,8 @@ def _rewrite_range_calls(
     text = source
     for slot, roles in sorted(direct.items()):
         prefix = re.compile(
-            r"\bA\s*\[\s*" + str(slot) + r"(?:\.0)?\s*\]\s*\("
+            r"(?:\(\s*)?A\s*(?:\)\s*)?\[\s*" + str(slot)
+            + r"(?:\.0)?\s*\]\s*\("
         )
         cursor = 0
         pieces = []
