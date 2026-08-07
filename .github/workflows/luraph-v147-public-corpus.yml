@@ -1,3 +1,4 @@
+# Retriggered after the 2026-08-06 GitHub Actions incident recovery.
 name: Luraph v14.7 public corpus
 
 on:
