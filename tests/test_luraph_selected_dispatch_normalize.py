@@ -46,9 +46,30 @@ def test_selected_dispatch_infers_its_own_register_file():
     assert effective["d"] == "X"
     assert effective["k"] == "u"
     assert effective["T"] == "c"
-    # Keep the old small-mode mapping for audit/other text; the selected mode's
-    # register local is additionally canonicalized rather than guessed globally.
-    assert effective["V"] == "c"
+    # The selected mode owns the register role. Keeping the old small-mode V->c
+    # mapping would collapse two different locals into the same canonical name.
+    assert "V" not in effective
+
+
+def test_selected_dispatch_replaces_stale_opcode_and_pc_roles():
+    data = {
+        "0": {
+            "source": "if U < 5 then y += 1 end",
+            "dispatch_opcode_name": "U",
+            "dispatch_pc_name": "y",
+        }
+    }
+    effective = selected._selected_mapping(
+        data,
+        {"w": "X", "S": "u", "O": "c", "f": "L", "M": "A"},
+    )
+    assert effective["U"] == "X"
+    assert effective["y"] == "u"
+    assert "w" not in effective
+    assert "S" not in effective
+    assert "O" not in effective
+    assert effective["f"] == "L"
+    assert effective["M"] == "A"
 
 
 def test_selected_dispatch_metadata_must_be_consistent():
