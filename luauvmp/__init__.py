@@ -95,12 +95,15 @@ _install_selected_dispatch_normalize()
 # Public v14.7 also randomizes the physical prototype-table layout. Infer the
 # opcode/operand fields from the same factory and remap both capture and semantic
 # roles into the canonical typed IR expected by the decompiler. The reference
-# layout remains byte-for-byte unchanged.
+# layout remains byte-for-byte unchanged. Preserve the separately randomized
+# per-prototype mode and closure upvalue-descriptor metadata after that remap.
 from .luraph_proto_layout import install as _install_proto_layout
 from .luraph_proto_mode import install as _install_proto_mode
+from .luraph_proto_upvalues import install as _install_proto_upvalues
 
 _install_proto_layout()
 _install_proto_mode()
+_install_proto_upvalues()
 
 # Normalize only cosmetic parentheses around scratch atoms before the structural
 # lift wrappers inspect randomized dispatcher text. Arithmetic/calls/tables keep
