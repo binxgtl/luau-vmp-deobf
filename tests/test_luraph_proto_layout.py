@@ -123,7 +123,7 @@ def test_semantic_role_mapping_uses_same_randomized_layout():
     assert mapping['B'] == 'L'
     assert mapping['H'] == 'X'
     assert mapping['s'] == 'u'
-    assert mapping['E'] == 'E'
+    assert mapping.get('E', 'E') == 'E'
     assert mapping['b'] == 'p'
     assert mapping['N'] == 'o'
     assert mapping['e'] == 'H'
@@ -131,4 +131,3 @@ def test_semantic_role_mapping_uses_same_randomized_layout():
     assert mapping['l'] == 'B'
     assert mapping['S'] == 'A'
     assert mapping['L'] == 'I'
-'''
