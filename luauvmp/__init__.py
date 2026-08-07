@@ -55,6 +55,13 @@ from .luraph_capture_diagnostics import install as _install_capture_diagnostics
 
 _install_capture_diagnostics()
 
+# Some public loaders wrap the parsed root prototype before passing it to the
+# intercepted constructor. Resolve it only via a bounded raw-table search;
+# zero or ambiguous candidates still fail closed.
+from .luraph_capture_root import install as _install_capture_root
+
+_install_capture_root()
+
 # A pre-bootstrap capture may intentionally terminate when the surrounding
 # wrapper later calls the disabled closure. Accept only that exact sentinel after
 # the typed IR, runtime facts, factory, patched VM and runner are independently
