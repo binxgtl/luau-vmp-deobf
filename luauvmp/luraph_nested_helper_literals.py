@@ -159,26 +159,18 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
     return result
 
 
-def _split_args(text: str) -> Optional[list[str]]:
+def _split_args(text: str, code: Optional[str] = None) -> Optional[list[str]]:
+    structure = _code_only(text) if code is None else code
+    if len(structure) != len(text):
+        return None
     parts = []
     start = 0
     stack = []
-    quote = None
     index = 0
     pairs = {")": "(", "]": "[", "}": "{"}
-    while index < len(text):
-        char = text[index]
-        if quote is not None:
-            if char == "\\":
-                index += 2
-                continue
-            if char == quote:
-                quote = None
-            index += 1
-            continue
-        if char in ("'", '"'):
-            quote = char
-        elif char in "([{":
+    while index < len(structure):
+        char = structure[index]
+        if char in "([{":
             stack.append(char)
         elif char in ")]}":
             if not stack or stack[-1] != pairs[char]:
@@ -188,10 +180,23 @@ def _split_args(text: str) -> Optional[list[str]]:
             parts.append(text[start:index].strip())
             start = index + 1
         index += 1
-    if quote is not None or stack:
+    if stack:
         return None
     parts.append(text[start:].strip())
     return parts
+
+
+def _sub_code(text, pattern, replacement):
+    """Apply a regex replacement only to executable Luau tokens."""
+    code = _code_only(text)
+    pieces = []
+    cursor = 0
+    for match in pattern.finditer(code):
+        pieces.append(text[cursor:match.start()])
+        pieces.append(replacement(match))
+        cursor = match.end()
+    pieces.append(text[cursor:])
+    return "".join(pieces)
 
 
 def _rewrite_range_calls(
@@ -206,26 +211,18 @@ def _rewrite_range_calls(
         cursor = 0
         pieces = []
         changed = False
+        code = _code_only(text)
         while True:
-            match = prefix.search(text, cursor)
+            match = prefix.search(code, cursor)
             if match is None:
                 pieces.append(text[cursor:])
                 break
             pieces.append(text[cursor:match.start()])
             depth = 1
-            quote = None
             index = match.end()
-            while index < len(text) and depth:
-                char = text[index]
-                if quote is not None:
-                    if char == "\\":
-                        index += 2
-                        continue
-                    if char == quote:
-                        quote = None
-                elif char in ("'", '"'):
-                    quote = char
-                elif char == "(":
+            while index < len(code) and depth:
+                char = code[index]
+                if char == "(":
                     depth += 1
                 elif char == ")":
                     depth -= 1
@@ -233,7 +230,10 @@ def _rewrite_range_calls(
             if depth != 0:
                 pieces.append(text[match.start():])
                 break
-            args = _split_args(text[match.end():index - 1])
+            args = _split_args(
+                text[match.end():index - 1],
+                code[match.end():index - 1],
+            )
             if args is None or len(args) != 3:
                 pieces.append(text[match.start():index])
                 cursor = index
@@ -265,10 +265,11 @@ def rewrite_source(
             r"\bA\s*\[\s*" + str(table) + r"(?:\.0)?\s*\]\s*"
             r"\[\s*(?P<field>" + _FIELD + r")\s*\[\s*u\s*\]\s*\]"
         )
-        text = pattern.sub(
+        text = _sub_code(
+            text,
+            pattern,
             lambda match, value=literal: "(%s)[%s[u]]"
             % (value, match.group("field")),
-            text,
         )
     if direct:
         text = _rewrite_range_calls(text, direct)

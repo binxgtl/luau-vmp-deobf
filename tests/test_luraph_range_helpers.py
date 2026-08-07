@@ -96,6 +96,43 @@ def test_balanced_arguments_are_not_split_inside_nested_calls():
     ) == 'table.unpack(R[key(a,b)],start,finish)'
 
 
+def test_range_rewrite_ignores_comments_and_string_literals():
+    source = (
+        'local quoted="A[26](finish,start,R)"; '
+        '-- A[26](finish,start,R)\n'
+        'return A[26](finish,start,R);'
+    )
+    expected = (
+        'local quoted="A[26](finish,start,R)"; '
+        '-- A[26](finish,start,R)\n'
+        'return table.unpack(R,start,finish);'
+    )
+    assert helpers._rewrite_range_calls(
+        source, {26: (2, 1, 0)}
+    ) == expected
+
+
+def test_range_rewrite_parses_long_bracket_arguments_lexically():
+    source = 'return A[26](finish,start,[=[value, )]=]);'
+    assert helpers._rewrite_range_calls(
+        source, {26: (2, 1, 0)}
+    ) == 'return table.unpack([=[value, )]=],start,finish);'
+
+
+def test_nested_helper_rewrite_ignores_comments_and_strings():
+    source = (
+        'local quoted="A[52][E[u]]"; -- A[52][E[u]]\n'
+        'return A[52][E[u]];'
+    )
+    expected = (
+        'local quoted="A[52][E[u]]"; -- A[52][E[u]]\n'
+        'return ({[9]=bit32.rshift})[E[u]];'
+    )
+    assert helpers.rewrite_source(
+        source, {52: {9: 'bit32.rshift'}}
+    ) == expected
+
+
 def test_unrecognized_helper_shape_is_not_rewritten():
     source = 'A[27](R,t,e+1)'
     assert helpers._rewrite_range_calls(source, {}) == source
