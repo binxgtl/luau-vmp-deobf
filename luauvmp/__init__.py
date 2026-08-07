@@ -103,13 +103,16 @@ _install_proto_layout()
 _install_proto_mode()
 
 # Remove only leading scalar literal locals that are provably never read by the
-# rest of a recovered opcode body. This exposes exact VM statements/branches to
-# the strict lifter without deleting calls, table accesses, or runtime dataflow.
+# rest of a recovered opcode body, and normalize parentheses that wrap an entire
+# assignment RHS. Then recognize the exact call/clear VM shapes already supported
+# by the reference lifter even when public builds rename their scratch locals.
 from .luraph_lift_dead_prefix import install as _install_lift_dead_prefix
 from .luraph_lift_rhs_parens import install as _install_lift_rhs_parens
+from .luraph_lift_generic_calls import install as _install_lift_generic_calls
 
 _install_lift_dead_prefix()
 _install_lift_rhs_parens()
+_install_lift_generic_calls()
 
 # Thousands of recovered CFG leaders must not become one recursively nested
 # Luau elseif chain. Keep each PC dispatch chunk bounded without changing any
