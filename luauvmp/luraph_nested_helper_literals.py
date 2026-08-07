@@ -48,14 +48,18 @@ def _helper_literal(entries: Dict[int, str]) -> str:
     ) + "}"
 
 
-def _compact_for_shape(text: str) -> str:
-    # Normalize numeric tokens while their lexical boundaries still exist, then
-    # remove whitespace. Doing this in the opposite order turns ``or 0b1`` into
-    # ``or0b1`` and prevents a boundary-safe numeric match.
-    normalized = _NUMBER_TOKEN.sub(
+def _normalize_numbers(text: str) -> str:
+    """Canonicalize Luau numeric spelling without changing token boundaries."""
+    return _NUMBER_TOKEN.sub(
         lambda match: normalize._normal_number(match.group(1)), text
     )
-    return re.sub(r"\s+", "", normalized)
+
+
+def _compact_for_shape(text: str) -> str:
+    # Use compact text only for punctuation-heavy arithmetic fingerprints. Token
+    # boundary-sensitive assignments are matched against _normalize_numbers()
+    # directly so ``then j=`` can never become the fake identifier ``thenj``.
+    return re.sub(r"\s+", "", _normalize_numbers(text))
 
 
 def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
@@ -79,14 +83,16 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
             re.fullmatch(r"[A-Za-z_]\w*", arg) is None for arg in args
         ):
             continue
-        compact = _compact_for_shape(vm_source[match.end():match.end() + 900])
+        body = vm_source[match.end():match.end() + 900]
+        normalized = _normalize_numbers(body)
+        compact = re.sub(r"\s+", "", normalized)
 
         start_name = None
         for arg in args:
             if re.search(
-                r"\b" + re.escape(arg) + r"=\(?" + re.escape(arg)
-                + r"or1\)?(?:;|\b)",
-                compact,
+                r"\b" + re.escape(arg) + r"\s*=\s*\(?\s*"
+                + re.escape(arg) + r"\s+or\s+1\s*\)?",
+                normalized,
             ):
                 start_name = arg
                 break
@@ -99,9 +105,10 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
                 if end == table:
                     continue
                 if re.search(
-                    r"\b" + re.escape(end) + r"=\(?" + re.escape(end)
-                    + r"or#" + re.escape(table) + r"\)?(?:;|\b)",
-                    compact,
+                    r"\b" + re.escape(end) + r"\s*=\s*\(?\s*"
+                    + re.escape(end) + r"\s+or\s*#\s*"
+                    + re.escape(table) + r"\s*\)?",
+                    normalized,
                 ):
                     end_name, table_name = end, table
                     break
