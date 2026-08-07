@@ -19,6 +19,10 @@ _DISPATCH = re.compile(
     re.S,
 )
 _FUNCTION = re.compile(r"\bfunction\s*\(([^)]*)\)", re.S)
+_DOT_NEW = re.compile(r"\b([A-Za-z_]\w*)\s*\.\s*new\s*\(", re.S)
+_BRACKET_NEW = re.compile(
+    r"\b([A-Za-z_]\w*)\s*\[\s*(['\"])new\2\s*\]\s*\(", re.S
+)
 
 
 def _excerpt(source: str, start: int, end: int, radius: int = 420) -> str:
@@ -35,6 +39,21 @@ def _redact_streams(source: str) -> str:
             replacement = "[=[LPH<redacted:%d>]=]" % len(payload)
             source = source[:match.start()] + replacement + source[match.end():]
     return source
+
+
+def _new_calls(source: str) -> list[dict]:
+    """Return bounded, static constructor-call diagnostics from recovered VM text."""
+    calls = []
+    for pattern, syntax in ((_DOT_NEW, "dot"), (_BRACKET_NEW, "bracket")):
+        for match in pattern.finditer(source):
+            calls.append({
+                "receiver": match.group(1),
+                "syntax": syntax,
+                "start": match.start(),
+                "excerpt": _excerpt(source, match.start(), match.end(), 180),
+            })
+    calls.sort(key=lambda entry: entry["start"])
+    return calls[:24]
 
 
 def probe(path: Path) -> dict:
@@ -62,7 +81,22 @@ def probe(path: Path) -> dict:
     decompress = []
     for match in re.finditer(r"DecompressBuffer", compact):
         decompress.append(_excerpt(compact, match.start(), match.end(), 240))
-    return {
+
+    recovered_vm_new_calls = []
+    recovered_vm_new_receivers = []
+    unpack_error = None
+    try:
+        vm_bytes, _ = luraph_loader.unpack(source)
+    except Exception as exc:  # diagnostic-only: preserve the primary probe output
+        unpack_error = "%s: %s" % (type(exc).__name__, exc)
+    else:
+        vm_source = vm_bytes.decode("utf-8", errors="surrogateescape")
+        recovered_vm_new_calls = _new_calls(vm_source)
+        recovered_vm_new_receivers = sorted({
+            entry["receiver"] for entry in recovered_vm_new_calls
+        })
+
+    result = {
         "sample": path.name,
         "source_chars": len(source),
         "redacted_chars": len(compact),
@@ -71,7 +105,13 @@ def probe(path: Path) -> dict:
         "dispatch_count": len(dispatches),
         "dispatches": dispatches[:12],
         "decompress_sites": decompress[:4],
+        "recovered_vm_new_call_count": len(recovered_vm_new_calls),
+        "recovered_vm_new_receivers": recovered_vm_new_receivers,
+        "recovered_vm_new_calls": recovered_vm_new_calls,
     }
+    if unpack_error is not None:
+        result["recovered_vm_unpack_error"] = unpack_error
+    return result
 
 
 def main() -> int:
