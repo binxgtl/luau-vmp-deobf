@@ -6,6 +6,8 @@ def test_accepts_exact_register_scratch_micro_ops():
     assert straight.is_proven_straightline("W=(W[z]); n=n[W]; M[h]=(n);")
     assert straight.is_proven_straightline("n^=W; (M)[h]=n;")
     assert straight.is_proven_straightline("c[o[u]]=c[_[u]]//c[H[u]];")
+    assert straight.is_proven_straightline("h=H[u]; n=E[u]; W=B[u];")
+    assert straight.is_proven_straightline("n=n[W]; W=B[u];")
 
 
 def test_accepts_pure_library_function_table_constants_without_calls():
@@ -24,7 +26,10 @@ def test_rejects_control_flow_and_calls():
 def test_rejects_environment_upvalue_and_vararg_state():
     assert not straight.is_proven_straightline("c[H[u]]=q[E[u]];")
     assert not straight.is_proven_straightline("M=I[H[u]];")
+    # Only the exact canonical operand read B[u] is admitted. Arbitrary indexed
+    # B state remains fail-closed and cannot be confused with the operand column.
     assert not straight.is_proven_straightline("B[H[u]]=M;")
+    assert not straight.is_proven_straightline("M=B[H[u]];")
     assert not straight.is_proven_straightline("c[H[u]]=j[E[u]];")
 
 
