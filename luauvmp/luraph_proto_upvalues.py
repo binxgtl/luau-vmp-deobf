@@ -6,10 +6,11 @@ Public randomized families move that table (observed slots 4 and 11), while the
 dynamic layout adapter intentionally wrote ``N`` for metadata it had not proven.
 
 The closure-constructor opcode itself is authoritative: it loads a prototype
-from an instruction operand array, immediately reads one fixed numeric field,
-takes the length of that table, and passes the same prototype to a helper that
-constructs a closure.  This module requires that complete def-use chain and a
-single field before exposing it to the capture runner.  No closure is invoked.
+from one instruction array, immediately reads one fixed numeric field, takes the
+length of that table, and passes the same prototype to the exact factory helper
+slot recorded by the extractor. Public builds may contain several dispatcher
+loops/modes, so no single loop's PC variable is assumed here. Ambiguous fields
+still fail closed and no closure is invoked.
 """
 from __future__ import annotations
 
@@ -31,32 +32,30 @@ def infer_upvalue_field(factory_source: str) -> Optional[int]:
     if metadata.get("PUBLIC_V147") != "1":
         return None
     helper = metadata.get("HELPER_VAR")
-    opcode_name = metadata.get("DISPATCH_VAR")
-    if not helper or not opcode_name:
-        return None
-    try:
-        dispatch, _opcode_array, pc_name = normalize._dispatch_shape(
-            factory_source, opcode_name
-        )
-    except Exception:
+    factory_slot = normalize._integer(metadata.get("FACTORY_SLOT", ""))
+    if not helper or factory_slot is None:
         return None
 
     number = normalize._NUMBER_TEXT
-    body = factory_source[dispatch.start():]
+    # Do not bind the instruction index to one selected dispatcher PC. The same
+    # extracted factory can contain multiple mode-specific dispatchers with
+    # different PC locals. The constructor slot + same-prototype def/use chain
+    # is the stronger identity.
     pattern = re.compile(
         r"(?P<proto>" + _ID + r")\s*=\s*\(?\s*"
-        r"(?P<array>" + _ID + r")\s*\[\s*" + re.escape(pc_name)
-        + r"\s*\]\s*\)?\s*;\s*"
+        r"(?P<array>" + _ID + r")\s*\[\s*(?P<index>" + _ID + r")\s*\]"
+        r"\s*\)?\s*;\s*"
         r"(?P<descriptors>" + _ID + r")\s*=\s*\(?\s*(?P=proto)"
         r"\s*\[\s*(?P<field>" + number + r")\s*\]\s*\)?\s*;\s*"
         r"(?P<count>" + _ID + r")\s*=\s*\(?\s*#\s*(?P=descriptors)"
         r"\s*\)?\s*;.{0,256}?"
         r"(?P<closure>" + _ID + r")\s*=\s*" + re.escape(helper)
-        + r"\s*\[\s*" + number + r"\s*\]\s*\(\s*(?P=proto)\s*,",
+        + r"\s*\[\s*" + str(factory_slot) + r"(?:\.0)?\s*\]\s*"
+        r"\(\s*(?P=proto)\s*,",
         re.S,
     )
     fields = []
-    for match in pattern.finditer(body):
+    for match in pattern.finditer(factory_source):
         field = normalize._integer(match.group("field"))
         if field is not None and field not in fields:
             fields.append(field)
