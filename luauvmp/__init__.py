@@ -63,6 +63,14 @@ from .luraph_capture_completion import install as _install_capture_completion
 
 _install_capture_completion()
 
+# Public v14.7 randomizes the dispatcher register/pc/operand local names. Derive
+# those roles from the extracted factory, complete the pure bit/string helper
+# map from the recovered VM, and canonicalize semantic text before structural
+# lifting while preserving raw_source for audit.
+from .luraph_semantic_normalize import install as _install_semantic_normalize
+
+_install_semantic_normalize()
+
 # Version 0.5.0 used a no-op setfenv in the staged finaliser, which caused
 # environment-wrapper anti-tamper loops. Preserve real rebinding while keeping
 # every getfenv lookup inside the closed sandbox.
