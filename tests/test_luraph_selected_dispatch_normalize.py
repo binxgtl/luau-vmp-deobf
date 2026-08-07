@@ -25,6 +25,32 @@ def test_selected_dispatch_locals_extend_canonical_mapping():
     assert mapping["B"] == "L"
 
 
+def test_selected_dispatch_infers_its_own_register_file():
+    data = {
+        "0": {
+            "source": "T[b[k]] = T[e[k]] + T[I[k]]",
+            "dispatch_opcode_name": "d",
+            "dispatch_pc_name": "k",
+        },
+        "1": {
+            "source": "T[l[k]] = T[b[k]]",
+            "dispatch_opcode_name": "d",
+            "dispatch_pc_name": "k",
+        },
+    }
+    mapping = {
+        "b": "p", "e": "H", "I": "_", "l": "B",
+        "S": "A", "L": "I", "V": "c",
+    }
+    effective = selected._selected_mapping(data, mapping)
+    assert effective["d"] == "X"
+    assert effective["k"] == "u"
+    assert effective["T"] == "c"
+    # Keep the old small-mode mapping for audit/other text; the selected mode's
+    # register local is additionally canonicalized rather than guessed globally.
+    assert effective["V"] == "c"
+
+
 def test_selected_dispatch_metadata_must_be_consistent():
     data = {
         "0": {"dispatch_opcode_name": "d", "dispatch_pc_name": "k"},
@@ -47,16 +73,16 @@ def test_rewrite_uses_selected_dispatch_names_and_keeps_raw_source(tmp_path):
     text = tmp_path / "semantics.txt"
     output.write_text(json.dumps({
         "7": {
-            "source": "if d < 5 then k += 1 end",
+            "source": "T[b[k]] = T[e[k]]",
             "unknown_ifs": 1,
             "dispatch_opcode_name": "d",
             "dispatch_pc_name": "k",
         }
     }), encoding="utf-8")
 
-    selected._rewrite_semantics(output, text, {})
+    selected._rewrite_semantics(output, text, {"b": "p", "e": "H"})
     data = json.loads(output.read_text(encoding="utf-8"))
     entry = data["7"]
-    assert entry["raw_source"] == "if d < 5 then k += 1 end"
-    assert entry["source"] == "if X < 5 then u += 1 end"
+    assert entry["raw_source"] == "T[b[k]] = T[e[k]]"
+    assert entry["source"] == "c[p[u]] = c[H[u]]"
     assert entry["canonicalized"] is True
