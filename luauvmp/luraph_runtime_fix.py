@@ -121,9 +121,39 @@ local TaskCompat = table.freeze({
 
         marker = 'environment._G = environment\n\nlocal function safeLoadString'
         telemetry = r'''environment._G = environment
+
+-- Constructor-bearing globals are deliberately not provided. Return a probe
+-- only for the two observed names so a blocked ``X.new`` access reports X
+-- precisely instead of the ambiguous "index nil with new". The probe cannot
+-- construct, call, index through, or expose any Roblox capability.
+local blockedConstructorProbes = {}
+local function blockedConstructorProbe(name)
+    local existing = blockedConstructorProbes[name]
+    if existing ~= nil then return existing end
+    local probe = setmetatable({}, {
+        __index = function(_, member)
+            error(
+                "safe-capture blocked access to missing global "
+                    .. name .. "." .. tostring(member),
+                0
+            )
+        end,
+        __call = function()
+            error("safe-capture blocked call to missing global " .. name, 0)
+        end,
+        __metatable = "locked",
+    })
+    blockedConstructorProbes[name] = probe
+    return probe
+end
+
 setmetatable(environment, {
     __index = function(_, key)
-        missingSafeGlobals[tostring(key)] = true
+        local name = tostring(key)
+        missingSafeGlobals[name] = true
+        if name == "Instance" or name == "Random" then
+            return blockedConstructorProbe(name)
+        end
         return nil
     end,
 })
