@@ -1,0 +1,46 @@
+from luauvmp.luraph_full import Instruction
+from luauvmp import luraph_lift_generic_calls as calls
+
+
+def ins(**overrides):
+    values = dict(proto=0, pc=1, e=11, opcode=0, p=12, o=13,
+                  h=14, underscore=15, b=16)
+    values.update(overrides)
+    return Instruction(**values)
+
+
+def test_lifts_one_arg_assignment_with_random_scratch_names():
+    source = 'e=p[u]; c[e]=c[e](c[e+1]); t=(e);'
+    assert calls.clean_statement(source, ins()) == 'R[12] = R[12](R[12 + 1])'
+
+
+def test_lifts_two_arg_assignment_with_other_random_names():
+    source = 'x=E[u]; c[x]=c[x](c[x+1],c[x+2]); r=x;'
+    assert calls.clean_statement(source, ins()) == 'R[11] = R[11](R[11 + 1], R[11 + 2])'
+
+
+def test_lifts_nonassigning_calls_and_zero_arg_call():
+    assert calls.clean_statement(
+        'M=o[u]; c[M](c[M+1],c[M+2]); T=(M-1);', ins()
+    ) == 'R[13](R[13 + 1], R[13 + 2])'
+    assert calls.clean_statement(
+        'q=H[u]; c[q](c[q+1]); z=q-1;', ins()
+    ) == 'R[14](R[14 + 1])'
+    assert calls.clean_statement(
+        't=_[u]; c[t]=c[t]();', ins()
+    ) == 'R[15] = R[15]()'
+
+
+def test_backreferences_reject_mismatched_scratch_flow():
+    assert calls.clean_statement(
+        'e=p[u]; c[x]=c[e](c[e+1]); t=e;', ins()
+    ) is None
+
+
+def test_lifts_register_clear_loop_with_or_without_explicit_step():
+    assert calls.clean_statement(
+        'for x=p[u],H[u],1 do c[x]=nil; end', ins()
+    ) == 'for __i = 12, 14 do R[__i] = nil end'
+    assert calls.clean_statement(
+        'for O=H[u],o[u] do c[O]=nil; end', ins()
+    ) == 'for __i = 14, 13 do R[__i] = nil end'
