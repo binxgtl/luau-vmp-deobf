@@ -26,6 +26,7 @@ from . import (
     luraph_lift_straightline,
     luraph_lift_closures,
     luraph_lift_close_upvalues,
+    luraph_lift_raw_upvalue_lvalues,
 )
 
 
@@ -176,6 +177,9 @@ def install() -> None:
     # the same recovered raw-cell layout. It also wraps terminal return handling
     # so close+return superinstructions preserve evaluation order and arity.
     luraph_lift_close_upvalues.install()
+    # Preserve the two grouped raw-cell lvalue spellings without globally
+    # stripping parentheses from arbitrary assignment targets.
+    luraph_lift_raw_upvalue_lvalues.install()
     # ``luraph_fallback_safety`` imports the decompiler before the public lift
     # wrappers are installed, so its module globals still point at the original
     # functions. Rebind to the final composed lifter here, after every lift pass
