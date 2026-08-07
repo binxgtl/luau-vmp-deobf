@@ -1,3 +1,4 @@
+from luauvmp import luraph_integral_literals as integral_literals
 from luauvmp import luraph_proto_layout as layout
 
 
@@ -7,7 +8,7 @@ def _public_factory_001():
 -- LUAUVMP_DISPATCH_VAR=w
 (function(Q,X,S)
 local C=Q[7];
-local F,g,D,b,L,f,K,o=Q[6],Q[3],Q[1],Q[10],Q[11],Q[8],Q[2];
+local F,g,D,b,L,f,K,o=Q[6.0],Q[3.0],Q[1.0],Q[10.0],Q[11.0],Q[8.0],Q[2.0];
 o=(function(...)
 local O,t,h,G,l,e,r,T,N,w,n,P,k={},1,0,nil,nil,1;
 while true do local w=(f[e]);
@@ -63,6 +64,15 @@ end);
 return a;
 end)
 '''
+
+
+def test_integral_decimal_slot_literals_are_exact_not_truncated():
+    assert integral_literals.integer('6.0') == 6
+    assert integral_literals.integer('6e0') == 6
+    assert integral_literals.integer('0x0_8') == 8
+    assert integral_literals.integer('0b1_000') == 8
+    assert integral_literals.integer('6.5') is None
+    assert integral_literals.integer('1e309') is None
 
 
 def test_infers_legacy_two_stream_randomized_layout():
