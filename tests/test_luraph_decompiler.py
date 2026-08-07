@@ -37,6 +37,7 @@ def test_render_compile_target_lifts_common_operations():
     source, metrics = render_program(program, semantics)
     assert 'PROTO[0] = function(__captured, __env, ...)' in source
     assert 'local I = __captured or {}' in source
+    assert 'local L, H, W, X, V, n, h, q, y, j, t, a, i, k, x, v' in source
     assert '__env = __env or getfenv()' in source
     assert 'local function __upget(cell)' in source
     assert 'local function __close_cell(cell)' in source

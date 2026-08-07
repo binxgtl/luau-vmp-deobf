@@ -80,6 +80,13 @@ def test_lifts_vararg_copy_into_register_file():
     )
 
 
+def test_lifts_bare_table_vararg_copy_into_register_file():
+    source = 'x={...}; for j=1,E[u] do c[j]=x[j]; end'
+    assert calls.clean_statement(source, ins(e=6)) == (
+        'for __i = 1, 6 do R[__i] = argv[__i] end'
+    )
+
+
 def test_real_parenthesized_vararg_shape_reaches_final_composed_lifter():
     source = '''e=({...});
 for x=1,p[u] do

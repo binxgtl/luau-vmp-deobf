@@ -63,6 +63,33 @@ def test_recognizes_generic_call_and_all_four_mode_conditions():
     assert calls.resolved_if_count(source) == 4
 
 
+def test_recognizes_public_generic_call_equivalent_guard_spellings():
+    source = '''
+        x=E[u]; v=o[u]; m=B[u];
+        if v~=0 then r=x+v-1; end
+        __s__,q=nil;
+        if v~=1 then
+            __s__,q=A[48](c[x](A[25](r,c,x+1)));
+        else
+            __s__,q=A[48](c[x]());
+        end
+        if m==1 then
+            r=x-1;
+        else
+            if m==0 then __s__=__s__+x-1; r=__s__;
+            else __s__=x+m-2; r=__s__+1; end
+            v=0;
+            for j=x,__s__ do v+=1; c[j]=q[v]; end
+        end
+    '''
+    kind, fields = calls.classify(source)
+    assert kind == "call_generic"
+    assert fields["base_field"] == "E"
+    assert fields["argc_field"] == "o"
+    assert fields["retc_field"] == "B"
+    assert calls.resolved_if_count(source) == 4
+
+
 def test_rejects_generic_call_if_result_table_changes():
     source = '''
         M=o[u]; h=H[u]; n=_[u];

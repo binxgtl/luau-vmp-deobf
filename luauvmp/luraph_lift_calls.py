@@ -22,6 +22,40 @@ def _text(source: str) -> str:
     return luraph_lift.compact(source).rstrip(";")
 
 
+def _normalize_generic_call_spelling(text: str) -> str:
+    """Canonicalize equivalent public CALL guards for the strict matcher."""
+    text = re.sub(
+        r"if(?P<argc>" + _ID + r")~=0then"
+        r"(?P<top>" + _ID + r")=(?P<base>" + _ID + r")\+(?P=argc)-1;end",
+        lambda match: (
+            "if%s==0thenelse%s=%s+%s-1;end"
+            % (match.group("argc"), match.group("top"), match.group("base"),
+               match.group("argc"))
+        ),
+        text,
+    )
+    text = re.sub(
+        r"A\[\d+\]\((?P<top>" + _ID + r"),R,(?P<base>" + _ID + r")\+1\)",
+        lambda match: "table.unpack(R,%s+1,%s)"
+        % (match.group("base"), match.group("top")),
+        text,
+    )
+    match = re.search(
+        r"if(?P<retc>" + _ID + r")==1then"
+        r"(?P<top>" + _ID + r")=(?P<base>" + _ID + r")-1;"
+        r"else(?P<body>.*)end$",
+        text,
+    )
+    if match is not None:
+        text = (
+            text[:match.start()]
+            + "if%s~=1then%selse%s=%s-1;end"
+            % (match.group("retc"), match.group("body"), match.group("top"),
+               match.group("base"))
+        )
+    return text
+
+
 def classify(source: str):
     text = _text(source)
 
@@ -63,6 +97,7 @@ def classify(source: str):
     # helper packs all returned values as (count, table).  The exact downstream
     # count/table use proves that role, so generated Luau can use table.pack
     # without relying on the randomized helper slot number.
+    text = _normalize_generic_call_spelling(text)
     match = re.fullmatch(
         r"(?P<base>" + _ID + r")=@(?P<base_field>" + _FIELD + r");"
         r"(?P<argc>" + _ID + r")=@(?P<argc_field>" + _FIELD + r");"
