@@ -1,13 +1,15 @@
 """Capture public Luraph v14.7 prototypes before bootstrap closure execution.
 
 The public corpus contains families where replacing only the final application
-constructor is too late: the same constructor is invoked earlier to run a
-bootstrap closure, which can touch Roblox/executor globals or enter a hot loop.
-This layer reuses the structural factory/final-site classifier and intercepts
-exactly one matching constructor+call before the final return.
+constructor is too late: the same constructor is invoked elsewhere in the same
+state machine to run a bootstrap closure, which can touch Roblox/executor globals
+or enter a hot loop.  State-machine execution order is not necessarily source
+order, so this layer matches the constructor identity structurally rather than
+requiring the bootstrap call to appear textually before the final return.
 
-No Roblox capability is added. If the early site is ambiguous, instrumentation
-fails closed rather than guessing which closure is safe to suppress.
+No Roblox capability is added. If the matching application site is ambiguous,
+instrumentation fails closed rather than guessing which closure is safe to
+suppress.
 """
 from __future__ import annotations
 
@@ -71,7 +73,11 @@ def _early_sites(vm_source: str, candidate: generic.Candidate) -> list[EarlySite
         return []
 
     sites = []
-    for match in _EARLY_PREFIX.finditer(vm_source, 0, final.start()):
+    # State-machine branches may place the final-return branch lexically before
+    # the branch that actually constructs and invokes the bootstrap closure.
+    # Search the complete VM source, then require an exact match on the same
+    # state/root/slot/environment tuple as the final constructor.
+    for match in _EARLY_PREFIX.finditer(vm_source):
         slot = public._integer(match.group("slot"))
         env = public._integer(match.group("environment"))
         if slot != candidate.slot or env != environment:
@@ -80,7 +86,7 @@ def _early_sites(vm_source: str, candidate: generic.Candidate) -> list[EarlySite
             continue
         opening = match.end() - 1
         end = _application_call_end(vm_source, opening)
-        if end is None or end > final.start():
+        if end is None:
             continue
         sites.append(EarlySite(
             start=match.start(),
@@ -92,6 +98,23 @@ def _early_sites(vm_source: str, candidate: generic.Candidate) -> list[EarlySite
             environment=env,
         ))
     return sites
+
+
+def _splice(source: str, replacements: list[tuple[int, int, str]]) -> str:
+    """Apply non-overlapping source replacements independent of source order."""
+    ordered = sorted(replacements, key=lambda item: item[0])
+    cursor = 0
+    output = []
+    for start, end, replacement in ordered:
+        if start < cursor or end < start:
+            raise luraph_capture.CaptureError(
+                "pre-bootstrap instrumentation sites overlapped"
+            )
+        output.append(source[cursor:start])
+        output.append(replacement)
+        cursor = end
+    output.append(source[cursor:])
+    return "".join(output)
 
 
 def _instrument_prebootstrap(vm_source: str) -> Optional[str]:
@@ -114,10 +137,10 @@ def _instrument_prebootstrap(vm_source: str) -> Optional[str]:
         early.result, early.state, early.root
     )
 
-    # Once the early site has captured the prototype tree, the later constructor
-    # must not run or call the capture callback a second time. Preserve the exact
-    # surrounding return shape by substituting the variable that now holds the
-    # callback's deliberately disabled closure.
+    # Once the application site has captured the prototype tree, the final
+    # constructor must not run or call the capture callback a second time.
+    # Preserve the exact surrounding return shape by substituting the variable
+    # that now holds the callback's deliberately disabled closure.
     if candidate.final_style == "direct":
         final_start, final_end = final.start(), final.end()
         final_replacement = "return %s;" % early.result
@@ -131,22 +154,18 @@ def _instrument_prebootstrap(vm_source: str) -> Optional[str]:
             % candidate.final_style
         )
 
-    if early.end > final_start:
+    if not (early.end <= final_start or final_end <= early.start):
         raise luraph_capture.CaptureError(
-            "pre-bootstrap constructor did not precede final constructor"
+            "pre-bootstrap and final constructor sites overlapped"
         )
 
-    patched = (
-        vm_source[:early.start]
-        + early_replacement
-        + vm_source[early.end:final_start]
-        + final_replacement
-        + vm_source[final_end:]
-    )
+    patched = _splice(vm_source, [
+        (early.start, early.end, early_replacement),
+        (final_start, final_end, final_replacement),
+    ])
 
     # Fail closed if the exact constructor+call shape survived the mutation.
-    remaining = _EARLY_PREFIX.search(patched, early.start)
-    if remaining is not None:
+    for remaining in _EARLY_PREFIX.finditer(patched):
         slot = public._integer(remaining.group("slot"))
         env = public._integer(remaining.group("environment"))
         if (slot == candidate.slot and env == early.environment
