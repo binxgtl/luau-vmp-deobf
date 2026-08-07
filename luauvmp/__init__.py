@@ -80,6 +80,7 @@ from .luraph_semantic_shape_fix import install as _install_semantic_shape_fix
 from .luraph_public_string_eval import install as _install_public_string_eval
 from .luraph_integral_literals import install as _install_integral_literals
 from .luraph_dispatch_select import install as _install_dispatch_select
+from .luraph_selected_dispatch_normalize import install as _install_selected_dispatch_normalize
 
 _install_semantic_normalize()
 _install_semantic_normalize_fix()
@@ -87,6 +88,7 @@ _install_semantic_shape_fix()
 _install_public_string_eval()
 _install_integral_literals()
 _install_dispatch_select()
+_install_selected_dispatch_normalize()
 
 # Public v14.7 also randomizes the physical prototype-table layout. Infer the
 # opcode/operand fields from the same factory and remap both capture and semantic
