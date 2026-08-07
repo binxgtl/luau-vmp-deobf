@@ -63,10 +63,14 @@ def test_blocked_global_probes_name_operations_without_adding_capability():
         'vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv',
     )
     assert 'local blockedGlobalProbes = {}' in runner
+    assert 'local blockedOperations = {}' in runner
+    assert 'local function failBlocked(message)' in runner
+    assert '#blockedOperations < 8' in runner
     assert 'safe-capture blocked constructor ' in runner
     assert 'safe-capture blocked access to missing global ' in runner
     assert 'safe-capture blocked call to missing global ' in runner
     assert 'renderBlockedArgs(...)' in runner
+    assert 'status("blocked safe-capture operations: "' in runner
     assert 'name == "Instance" or name == "Random"' in runner
     assert 'or name == "game" or name == "workspace"' in runner
     assert 'name == "identifyexecutor" or name == "iscclosure" or name == "islclosure"' in runner
