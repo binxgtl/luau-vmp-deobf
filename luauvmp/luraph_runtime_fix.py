@@ -124,9 +124,11 @@ local TaskCompat = table.freeze({
 
 -- Missing Roblox/executor globals are never implemented here. A tiny family of
 -- fail-closed probes only names the exact operation that the parser attempted,
--- with bounded argument text, then aborts. This keeps diagnostics useful while
--- preserving the same no-capability boundary as returning nil.
+-- with bounded argument text, then aborts. Record the first few blocked
+-- operations before raising because the protected VM can swallow the error with
+-- pcall and otherwise leave only a later, ambiguous "call a nil value" failure.
 local blockedGlobalProbes = {}
+local blockedOperations = {}
 local function renderBlockedArgs(...)
     local input = table.pack(...)
     local parts = {}
@@ -144,6 +146,13 @@ local function renderBlockedArgs(...)
     return table.concat(parts, ", ")
 end
 
+local function failBlocked(message)
+    if #blockedOperations < 8 then
+        blockedOperations[#blockedOperations + 1] = string.sub(message, 1, 512)
+    end
+    error(message, 0)
+end
+
 local function blockedObjectProbe(name)
     local existing = blockedGlobalProbes[name]
     if existing ~= nil then return existing end
@@ -152,24 +161,21 @@ local function blockedObjectProbe(name)
             local memberName = tostring(member)
             if memberName == "new" then
                 return function(...)
-                    error(
+                    failBlocked(
                         "safe-capture blocked constructor " .. name .. ".new("
-                            .. renderBlockedArgs(...) .. ")",
-                        0
+                            .. renderBlockedArgs(...) .. ")"
                     )
                 end
             end
-            error(
+            failBlocked(
                 "safe-capture blocked access to missing global "
-                    .. name .. "." .. memberName,
-                0
+                    .. name .. "." .. memberName
             )
         end,
         __call = function(_, ...)
-            error(
+            failBlocked(
                 "safe-capture blocked call to missing global " .. name .. "("
-                    .. renderBlockedArgs(...) .. ")",
-                0
+                    .. renderBlockedArgs(...) .. ")"
             )
         end,
         __metatable = "locked",
@@ -180,10 +186,9 @@ end
 
 local function blockedFunctionProbe(name)
     return function(...)
-        error(
+        failBlocked(
             "safe-capture blocked call to missing global " .. name .. "("
-                .. renderBlockedArgs(...) .. ")",
-            0
+                .. renderBlockedArgs(...) .. ")"
         )
     end
 end
@@ -222,6 +227,9 @@ end
 table.sort(missingNames)
 if #missingNames > 0 then
     status("missing safe-capture globals: " .. table.concat(missingNames, ", "))
+end
+if #blockedOperations > 0 then
+    status("blocked safe-capture operations: " .. table.concat(blockedOperations, " | "))
 end
 if not parserOk then
     error(parserResult, 0)
