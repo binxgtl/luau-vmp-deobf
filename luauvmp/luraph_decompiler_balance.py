@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 from typing import List, Sequence, Tuple
 
-from . import luraph_decompiler
+from . import luraph_decompiler, luraph_lift
 
 
 _CHUNK_SIZE = 64
@@ -156,6 +156,13 @@ def install() -> None:
     global _ORIGINAL_RENDER, _INSTALLED
     if _INSTALLED:
         return
+    # ``luraph_fallback_safety`` imports the decompiler before the public lift
+    # wrappers are installed, so its module globals still point at the original
+    # functions. Rebind to the final composed lifter here, after every lift pass
+    # has been installed and immediately before the renderer is wrapped.
+    luraph_decompiler.clean_statement = luraph_lift.clean_statement
+    luraph_decompiler.decode_branch = luraph_lift.decode_branch
+    luraph_decompiler.return_expression = luraph_lift.return_expression
     _ORIGINAL_RENDER = luraph_decompiler.render_program
     luraph_decompiler.render_program = render_program
     _INSTALLED = True
