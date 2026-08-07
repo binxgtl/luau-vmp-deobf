@@ -102,6 +102,13 @@ from .luraph_proto_mode import install as _install_proto_mode
 _install_proto_layout()
 _install_proto_mode()
 
+# Normalize only cosmetic parentheses around scratch atoms before the structural
+# lift wrappers inspect randomized dispatcher text. Arithmetic/calls/tables keep
+# their original grouping.
+from .luraph_lift_atom_parens import install as _install_lift_atom_parens
+
+_install_lift_atom_parens()
+
 # Remove only leading scalar literal locals that are provably never read by the
 # rest of a recovered opcode body, normalize parentheses that wrap an entire
 # assignment RHS, recognize randomized call/clear shapes, and materialize exact
