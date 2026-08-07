@@ -76,9 +76,11 @@ _install_capture_completion()
 # lifting while preserving raw_source for audit.
 from .luraph_semantic_normalize import install as _install_semantic_normalize
 from .luraph_semantic_normalize_fix import install as _install_semantic_normalize_fix
+from .luraph_semantic_shape_fix import install as _install_semantic_shape_fix
 
 _install_semantic_normalize()
 _install_semantic_normalize_fix()
+_install_semantic_shape_fix()
 
 # Version 0.5.0 used a no-op setfenv in the staged finaliser, which caused
 # environment-wrapper anti-tamper loops. Preserve real rebinding while keeping
