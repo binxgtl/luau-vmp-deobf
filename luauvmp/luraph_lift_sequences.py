@@ -150,6 +150,10 @@ def clean_statement(source, ins):
         )
 
     # tmp = I[key]; R[dst] = tmp[2][tmp[1]]
+    # The public closure/close passes preserve this exact raw-cell representation:
+    # an open cell indexes its live register table, while a closed cell points
+    # key 2 back at itself and key 1 at the stored-value key.  Therefore these
+    # patterns can be emitted structurally without guessing an abstract cell API.
     match = re.fullmatch(
         r"(?P<tmp>" + _ID + r")=I\[@(?P<key>" + _FIELD + r")\];"
         r"R\[@(?P<dst>" + _FIELD + r")\]=(?P=tmp)\[2(?:\.0)?\]"
@@ -160,6 +164,112 @@ def clean_statement(source, ins):
         key = _value(ins, match.group("key"))
         return "%s = I[%s][2][I[%s][1]]" % (
             _reg(ins, match.group("dst")), key, key,
+        )
+
+    # tmp = I[key]; R[dst] = tmp[2][tmp[1]][R[index]]
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=I\[@(?P<key>" + _FIELD + r")\];"
+        r"R\[@(?P<dst>" + _FIELD + r")\]=(?P=tmp)\[2(?:\.0)?\]"
+        r"\[(?P=tmp)\[1(?:\.0)?\]\]\[R\[@(?P<index>" + _FIELD + r")\]\]",
+        text,
+    )
+    if match:
+        key = _value(ins, match.group("key"))
+        index = _reg(ins, match.group("index"))
+        return "%s = I[%s][2][I[%s][1]][%s]" % (
+            _reg(ins, match.group("dst")), key, key, index,
+        )
+
+    # tmp = I[key]; tmp[2][tmp[1]][R[index]] = R[src]
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=I\[@(?P<key>" + _FIELD + r")\];"
+        r"(?P=tmp)\[2(?:\.0)?\]\[(?P=tmp)\[1(?:\.0)?\]\]"
+        r"\[R\[@(?P<index>" + _FIELD + r")\]\]=R\[@(?P<src>" + _FIELD + r")\]",
+        text,
+    )
+    if match:
+        key = _value(ins, match.group("key"))
+        index = _reg(ins, match.group("index"))
+        return "I[%s][2][I[%s][1]][%s] = %s" % (
+            key, key, index, _reg(ins, match.group("src")),
+        )
+
+    # tmp = I[key]; tmp[2][tmp[1]] = R[src]
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=I\[@(?P<key>" + _FIELD + r")\];"
+        r"(?P=tmp)\[2(?:\.0)?\]\[(?P=tmp)\[1(?:\.0)?\]\]"
+        r"=R\[@(?P<src>" + _FIELD + r")\]",
+        text,
+    )
+    if match:
+        key = _value(ins, match.group("key"))
+        return "I[%s][2][I[%s][1]] = %s" % (
+            key, key, _reg(ins, match.group("src")),
+        )
+
+    # Direct captured-value table indexing. This is intentionally distinct from
+    # raw-cell dereferencing above: the recovered semantic itself indexes I[key]
+    # directly, so preserve that operation exactly.
+    match = re.fullmatch(
+        r"R\[@(?P<dst>" + _FIELD + r")\]=I\[@(?P<key>" + _FIELD
+        + r")\]\[R\[@(?P<index>" + _FIELD + r")\]\]",
+        text,
+    )
+    if match:
+        return "%s = I[%s][%s]" % (
+            _reg(ins, match.group("dst")),
+            _value(ins, match.group("key")),
+            _reg(ins, match.group("index")),
+        )
+
+    match = re.fullmatch(
+        r"I\[@(?P<key>" + _FIELD + r")\]\[R\[@(?P<index>" + _FIELD
+        + r")\]\]=R\[@(?P<src>" + _FIELD + r")\]",
+        text,
+    )
+    if match:
+        return "I[%s][%s] = %s" % (
+            _value(ins, match.group("key")),
+            _reg(ins, match.group("index")),
+            _reg(ins, match.group("src")),
+        )
+
+    # Exact persistent-scratch staging of the captured vector.  These operations
+    # have no calls/control flow and the backend declares every named scratch
+    # local.  Preserve the state edge instead of quoting it as fallback data.
+    match = re.fullmatch(
+        r"(?P<table>" + _ID + r")=I;(?P<key>" + _ID + r")=@(?P<field>"
+        + _FIELD + r")",
+        text,
+    )
+    if match:
+        return "%s = I; %s = %s" % (
+            match.group("table"), match.group("key"),
+            _value(ins, match.group("field")),
+        )
+
+    match = re.fullmatch(
+        r"(?P<table>" + _ID + r")=I;(?P<key>" + _ID + r")=@(?P<field>"
+        + _FIELD + r");(?P=table)=(?P=table)\[(?P=key)\]",
+        text,
+    )
+    if match:
+        table, key = match.group("table"), match.group("key")
+        return "%s = I; %s = %s; %s = %s[%s]" % (
+            table, key, _value(ins, match.group("field")), table, table, key,
+        )
+
+    match = re.fullmatch(
+        r"(?P<a>" + _ID + r")=@(?P<afield>" + _FIELD + r");"
+        r"(?P<table>" + _ID + r")=I;"
+        r"(?P<b>" + _ID + r")=@(?P<bfield>" + _FIELD + r")",
+        text,
+    )
+    if match:
+        return "%s = %s; %s = I; %s = %s" % (
+            match.group("a"), _value(ins, match.group("afield")),
+            match.group("table"), match.group("b"),
+            _value(ins, match.group("bfield")),
         )
 
     return None
