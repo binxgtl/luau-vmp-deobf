@@ -44,3 +44,27 @@ def test_lifts_register_clear_loop_with_or_without_explicit_step():
     assert calls.clean_statement(
         'for O=H[u],o[u] do c[O]=nil; end', ins()
     ) == 'for __i = 14, 13 do R[__i] = nil end'
+
+
+def test_lifts_indirect_clear_alias_chain():
+    source = 'e=p[u]; N=H[u]; for x=e,N do l=c; I=x; x=nil; l[I]=x; end'
+    assert calls.clean_statement(source, ins(p=4, h=9)) == (
+        'for __i = 4, 9 do R[__i] = nil end'
+    )
+
+
+def test_indirect_clear_rejects_non_nil_store():
+    source = 'e=p[u]; N=H[u]; for x=e,N do l=c; I=x; x=nil; l[I]=false; end'
+    assert calls.clean_statement(source, ins()) is None
+
+
+def test_lifts_vararg_copy_into_register_file():
+    source = 'e=({...}); for x=1,p[u] do c[x]=e[x]; end'
+    assert calls.clean_statement(source, ins(p=6)) == (
+        'for __i = 1, 6 do R[__i] = argv[__i] end'
+    )
+
+
+def test_vararg_copy_rejects_different_source_table():
+    source = 'e=({...}); for x=1,p[u] do c[x]=other[x]; end'
+    assert calls.clean_statement(source, ins()) is None
