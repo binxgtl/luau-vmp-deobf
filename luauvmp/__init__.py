@@ -103,20 +103,23 @@ _install_proto_layout()
 _install_proto_mode()
 
 # Remove only leading scalar literal locals that are provably never read by the
-# rest of a recovered opcode body, and normalize parentheses that wrap an entire
-# assignment RHS. Then recognize the exact call/clear VM shapes already supported
-# by the reference lifter even when public builds rename their scratch locals.
+# rest of a recovered opcode body, normalize parentheses that wrap an entire
+# assignment RHS, recognize randomized call/clear shapes, and materialize exact
+# whole prototype operand arrays when the VM intentionally exposes them.
 from .luraph_lift_dead_prefix import install as _install_lift_dead_prefix
 from .luraph_lift_rhs_parens import install as _install_lift_rhs_parens
 from .luraph_lift_generic_calls import install as _install_lift_generic_calls
+from .luraph_lift_whole_arrays import install as _install_lift_whole_arrays
 
 _install_lift_dead_prefix()
 _install_lift_rhs_parens()
 _install_lift_generic_calls()
+_install_lift_whole_arrays()
 
 # Thousands of recovered CFG leaders must not become one recursively nested
 # Luau elseif chain. Keep each PC dispatch chunk bounded without changing any
-# block body or branch semantics.
+# block body or branch semantics. Its installer also binds the final composed
+# lifter into the decompiler after all structural lift passes above are installed.
 from .luraph_decompiler_balance import install as _install_decompiler_balance
 
 _install_decompiler_balance()
