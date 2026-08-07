@@ -16,6 +16,7 @@ from __future__ import annotations
 import re
 
 from . import luraph_decompiler
+from .luraph_full import substitute_prepared
 
 
 _INSTALLED = False
@@ -39,6 +40,7 @@ _FORBIDDEN_KEYWORDS = re.compile(
     r"\b(?:if|then|else|elseif|for|while|repeat|until|function|return|break|continue|local|do|end)\b"
 )
 _IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
+_DEAD_W_PREFIX = re.compile(r"^\s*local\s+W\s*=\s*57(?:\.0)?\s*;\s*")
 
 
 def is_proven_straightline(source: str) -> bool:
@@ -63,6 +65,12 @@ def is_proven_straightline(source: str) -> bool:
         if name not in allowed:
             return False
     return True
+
+
+def _executable_raw(ins, prepared) -> str:
+    """Substitute the recovered semantic before fallback-safety quoting."""
+    _name, semantic = prepared[ins.opcode]
+    return _DEAD_W_PREFIX.sub("", substitute_prepared(semantic, ins), count=1)
 
 
 def _normalize_emitted(raw: str) -> str:
@@ -93,16 +101,16 @@ def decompile_proto(proto, semantics, prepared):
             semantic = semantics[ins.opcode]
             if not is_proven_straightline(semantic):
                 continue
-            # Do not interfere with instructions already lifted structurally by
-            # an earlier layer in the composed backend.
+            # Match the exact fallback span produced by the current composed
+            # backend, but emit the pre-quoted specialised semantic body.
             marker = "            -- pc=%d opcode=%d" % (ins.pc, ins.opcode)
             next_pc = (block.instructions[pos + 1].pc
                        if pos + 1 < len(block.instructions) else block.fallthrough)
-            raw_lines = luraph_decompiler._indent(luraph_decompiler._raw(ins, prepared))
+            fallback_lines = luraph_decompiler._indent(luraph_decompiler._raw(ins, prepared))
             old = _span(
                 marker,
                 ("            pc = %d" % next_pc) if next_pc is not None else None,
-                raw_lines,
+                fallback_lines,
             )
             if source.count(old) == 0:
                 continue
@@ -111,7 +119,7 @@ def decompile_proto(proto, semantics, prepared):
                     "straight-line fallback span is ambiguous for proto %d pc %d"
                     % (proto.id, ins.pc)
                 )
-            emitted = _normalize_emitted(luraph_decompiler._raw(ins, prepared))
+            emitted = _normalize_emitted(_executable_raw(ins, prepared))
             new_lines = [marker]
             if next_pc is not None:
                 new_lines.append("            pc = %d" % next_pc)
