@@ -21,6 +21,14 @@ from .luraph_generic_capture import install as _install_generic_capture
 _install_public_v147()
 _install_generic_capture()
 
+# Some public families invoke the inferred constructor once to run a bootstrap
+# closure before reaching the final application constructor. Intercept exactly
+# one structurally matching constructor+call before that bootstrap can execute;
+# ambiguous sites fail closed and no Roblox capability is introduced.
+from .luraph_prebootstrap_capture import install as _install_prebootstrap_capture
+
+_install_prebootstrap_capture()
+
 # The Lune runner is generated through two string-literal layers. Correct the
 # capture TSV delimiters before any CLI or library caller builds the runner.
 from .luraph_capture_format import install as _install_capture_format
