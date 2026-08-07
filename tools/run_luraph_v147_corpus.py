@@ -125,6 +125,7 @@ def run_sample(sample: Path, output_root: Path, timeout: int) -> dict:
     command = [
         "luauvmp", "luraph-full", str(sample),
         "-o", str(output), "--force", "--timeout", str(timeout),
+        "--keep-failed",
     ]
     process = subprocess.Popen(
         command,
