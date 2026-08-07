@@ -18,6 +18,7 @@ import json
 import re
 
 from . import luraph_capture, luraph_recover
+from . import luraph_public_v147 as public
 from . import luraph_semantic_normalize as normalize
 
 _INSTALLED = False
@@ -62,6 +63,21 @@ def _compact_for_shape(text: str) -> str:
     return re.sub(r"\s+", "", _normalize_numbers(text))
 
 
+def _code_only(source: str) -> str:
+    """Mask Luau comments and strings while preserving source offsets."""
+    pieces = []
+    cursor = 0
+    for token in public._tokens(source):
+        pieces.append(" " * (token.start - cursor))
+        if token.kind == "string":
+            pieces.append(" " * (token.end - token.start))
+        else:
+            pieces.append(source[token.start:token.end])
+        cursor = token.end
+    pieces.append(" " * (len(source) - cursor))
+    return "".join(pieces)
+
+
 def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
     """Return ``slot -> (table_arg, start_arg, end_arg)`` for proven unpackers.
 
@@ -73,17 +89,21 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
     assignment = re.compile(
         r"(?:\(\s*)?(?P<table>[A-Za-z_]\w*)\s*(?:\)\s*)?"
         r"\[\s*(?P<slot>" + _NUMBER + r")\s*\]"
-        r"\s*=\s*\(?\s*function\s*\((?P<args>[^)]*)\)",
+        r"\s*=\s*\(?\s*(?P<function>function)\s*\((?P<args>[^)]*)\)",
         re.S,
     )
     result: Dict[int, Tuple[int, int, int]] = {}
-    for match in assignment.finditer(vm_source):
+    code_source = _code_only(vm_source)
+    for match in assignment.finditer(code_source):
         args = [item.strip() for item in match.group("args").split(",") if item.strip()]
         if len(args) != 3 or any(
             re.fullmatch(r"[A-Za-z_]\w*", arg) is None for arg in args
         ):
             continue
-        body = vm_source[match.end():match.end() + 900]
+        function_end = public._function_end(
+            code_source, match.start("function")
+        )
+        body = code_source[match.end():function_end]
         normalized = _normalize_numbers(body)
         compact = re.sub(r"\s+", "", normalized)
 
@@ -180,7 +200,7 @@ def _rewrite_range_calls(
     text = source
     for slot, roles in sorted(direct.items()):
         prefix = re.compile(
-            r"(?:\(\s*)?A\s*(?:\)\s*)?\[\s*" + str(slot)
+            r"(?<![A-Za-z0-9_])(?:A|\(\s*A\s*\))\s*\[\s*" + str(slot)
             + r"(?:\.0)?\s*\]\s*\("
         )
         cursor = 0
