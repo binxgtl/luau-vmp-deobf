@@ -47,6 +47,33 @@ def test_infers_parenthesized_table_end_start_table_with_numeric_separators():
     assert helpers.infer_range_helpers(source) == {26: (2, 1, 0)}
 
 
+def test_ignores_helper_shapes_in_comments_and_strings():
+    source = '''
+        -- U[26]=function(M,A,p) A=A or 1; p=p or #M;
+        --     if (p-A+1)>7997 then return M; end; end;
+        local text = [[
+            U[27]=function(M,A,p) A=A or 1; p=p or #M;
+                if (p-A+1)>7997 then return M; end; end;
+        ]]
+    '''
+    assert helpers.infer_range_helpers(source) == {}
+
+
+def test_helper_evidence_cannot_bleed_into_the_next_function():
+    source = '''
+        U[30]=function(M,A,p)
+            A=A or 1;
+            return M;
+        end;
+        U[31]=function(M,A,p)
+            A=A or 1;
+            p=p or #M;
+            if (p-A+1)>7997 then return M; end;
+        end;
+    '''
+    assert helpers.infer_range_helpers(source) == {31: (0, 1, 2)}
+
+
 def test_rewrites_range_calls_using_recovered_argument_roles():
     assert helpers._rewrite_range_calls(
         'R[p[u]]=R[p[u]](A[27](R,t,e+1));',
