@@ -59,11 +59,50 @@ def _helper_entries(text: str):
     return entries
 
 
+def _range_call(text, *, assign: bool):
+    """Parse an exact call using a recovered table.unpack register range."""
+    target = (
+        r"R\[(?P=base)\]=R\[(?P=base)\]" if assign
+        else r"R\[(?P=base)\]"
+    )
+    return re.fullmatch(
+        r"(?P<base>" + _ID + r")=@(?P<base_field>" + _FIELD + r");"
+        r"(?P<last>" + _ID + r")=\(?(?P=base)\+@(?P<count_field>"
+        + _FIELD + r")-1(?:\.0)?\)?;"
+        + target
+        + r"\(table\.unpack\(R,(?P=base)\+1(?:\.0)?,(?P=last)\)\);"
+        r"(?P<top>" + _ID + r")=\(?(?P=base)(?P<minus>-1(?:\.0)?)?\)?",
+        text,
+    )
+
+
 def clean_statement(source, ins):
     existing = _ORIGINAL_CLEAN(source, ins)
     if existing is not None:
         return existing
     text = luraph_lift.compact(source).rstrip(";")
+
+    # base = operand; last = base + count - 1; then call through the register
+    # range recovered from the randomized VM unpack helper. The trailing top
+    # assignment is interpreter bookkeeping; assignment/non-assignment forms
+    # require the exact top value used by their known v14.7 operation.
+    match = _range_call(text, assign=True)
+    if match and match.group("minus") is None:
+        base = _value(ins, match.group("base_field"))
+        count = _value(ins, match.group("count_field"))
+        return (
+            "R[%s] = R[%s](table.unpack(R, %s + 1, %s + %s - 1))"
+            % (base, base, base, base, count)
+        )
+
+    match = _range_call(text, assign=False)
+    if match and match.group("minus") is not None:
+        base = _value(ins, match.group("base_field"))
+        count = _value(ins, match.group("count_field"))
+        return (
+            "R[%s](table.unpack(R, %s + 1, %s + %s - 1))"
+            % (base, base, base, count)
+        )
 
     # A randomized helper table has already been converted to an explicit pure
     # Luau literal by luraph_nested_helper_literals. Select its exact entry using
