@@ -1,0 +1,35 @@
+"""Accept cosmetic grouping in otherwise-proven vararg transfer bodies."""
+from __future__ import annotations
+
+import re
+
+from . import luraph_vararg_semantics as vararg
+
+
+_INSTALLED = False
+_ID = r"[A-Za-z_]\w*"
+
+
+def compact(source: str) -> str:
+    text = re.sub(r"\s+", "", source)
+    # Only scalar atoms and the tiny integer-offset arithmetic emitted by the
+    # dispatcher are unwrapped. Calls, indexing chains, comparisons and control
+    # flow retain their grouping and must still match the exact classifiers.
+    atom = (
+        r"(?:" + _ID + r"|[EpoH_B]\[u\]|c|-?\d+(?:\.0)?"
+        r"|" + _ID + r"[+\-]\d+(?:\.0)?)"
+    )
+    for _ in range(5):
+        updated = re.sub(r"\((" + atom + r")\)", r"\1", text)
+        if updated == text:
+            break
+        text = updated
+    return text.rstrip(";")
+
+
+def install() -> None:
+    global _INSTALLED
+    if _INSTALLED:
+        return
+    vararg._compact = compact
+    _INSTALLED = True
