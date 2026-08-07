@@ -53,7 +53,7 @@ def classify(source: str):
 
     match = re.fullmatch(
         r"for(?P<index>" + _ID + r")=1,@(?P<count_field>" + _FIELD + r")do"
-        r"R\[(?P=index)\]=(?P<varargs>" + _ID + r")\[(?P=index)\]end",
+        r"R\[(?P=index)\]=(?P<varargs>" + _ID + r")\[(?P=index)\];?end",
         text,
     )
     if match:
@@ -77,7 +77,7 @@ def classify(source: str):
         r"else(?P=count)=(?P=base)\+(?P=retc)-2;(?P=top)=(?P=count)\+1;end"
         r"(?P<cursor>" + _ID + r")=0;"
         r"for(?P<loop>" + _ID + r")=(?P=base),(?P=count)do"
-        r"(?P=cursor)\+=1;R\[(?P=loop)\]=(?P=results)\[(?P=cursor)\]end"
+        r"(?P=cursor)\+=1;R\[(?P=loop)\]=(?P=results)\[(?P=cursor)\];?end"
         r"else(?P=top)=(?P=base)-1;end",
         text,
     )
