@@ -49,6 +49,14 @@ from .luraph_runtime_fix import install as _install_runtime_fix
 
 _install_runtime_fix()
 
+# A pre-bootstrap capture may intentionally terminate when the surrounding
+# wrapper later calls the disabled closure. Accept only that exact sentinel after
+# the typed IR, runtime facts, factory, patched VM and runner are independently
+# validated as complete.
+from .luraph_capture_completion import install as _install_capture_completion
+
+_install_capture_completion()
+
 # Version 0.5.0 used a no-op setfenv in the staged finaliser, which caused
 # environment-wrapper anti-tamper loops. Preserve real rebinding while keeping
 # every getfenv lookup inside the closed sandbox.
