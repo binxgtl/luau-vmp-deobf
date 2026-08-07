@@ -41,13 +41,21 @@ _FORBIDDEN_KEYWORDS = re.compile(
 )
 _IDENTIFIER = re.compile(r"[A-Za-z_]\w*")
 _DEAD_W_PREFIX = re.compile(r"^\s*local\s+W\s*=\s*57(?:\.0)?\s*;\s*")
+_CANONICAL_B_OPERAND = re.compile(r"\bB\s*\[\s*u\s*\]")
 
 
 def is_proven_straightline(source: str) -> bool:
     """Whether ``source`` is an exact side-effect-bounded scratch micro-op."""
     if not source.strip() or _FORBIDDEN_KEYWORDS.search(source):
         return False
-    if re.search(r"\b(?:A|B|I|P|q|j)\s*\[", source):
+
+    # ``B`` is both a historical scratch/cache spelling and, on randomized
+    # public layouts, one of the six canonical typed-IR operand columns.  The
+    # collision pass renames an actual raw scratch ``B`` to ``__s_B`` whenever
+    # another identifier maps to canonical operand B.  Still, admit only the
+    # exact operand token ``B[u]`` here; every other B use remains forbidden.
+    scan_source = _CANONICAL_B_OPERAND.sub("0", source)
+    if re.search(r"\b(?:A|B|I|P|q|j)\s*\[", scan_source):
         return False
     # Reject all calls, including parenthesized callees such as ``(M)()``.
     if re.search(r"[A-Za-z_]\w*\s*\(", source) or re.search(r"\)\s*\(", source):
@@ -58,7 +66,7 @@ def is_proven_straightline(source: str) -> bool:
         return False
 
     allowed = _SCRATCH | _OPERANDS | _SAFE_GLOBALS | {"true", "false", "nil"}
-    for match in _IDENTIFIER.finditer(source):
+    for match in _IDENTIFIER.finditer(scan_source):
         name = match.group(0)
         if name in _FORBIDDEN_NAMES:
             return False
