@@ -4,8 +4,9 @@ from luauvmp import luraph_capture
 from luauvmp import luraph_proto_upvalues as upvalues
 
 
-def factory(helper, opcode, pc, closure_body):
+def factory(helper, opcode, pc, closure_body, slot=50):
     return f'''-- LUAUVMP_PUBLIC_V147=1
+-- LUAUVMP_FACTORY_SLOT={slot}
 -- LUAUVMP_HELPER_VAR={helper}
 -- LUAUVMP_DISPATCH_VAR={opcode}
 (function(d, env)
@@ -39,12 +40,22 @@ def test_infers_hex_slot_three_from_reference_public_shape():
     source = factory(
         "b", "R", "G",
         "M=i[G]; h=M[0X3]; n=#h; W=n>0 and {}; z=b[59](M,W);",
+        slot=59,
     )
     assert upvalues.infer_upvalue_field(source) == 3
 
 
+def test_inference_does_not_depend_on_the_first_dispatch_pc_name():
+    source = factory(
+        "M", "w", "outerPc",
+        "e=g[innerPc]; N=e[4]; l=#N; I=l>0 and {}; z=M[50](e,I);",
+    )
+    assert upvalues.infer_upvalue_field(source) == 4
+
+
 def test_non_public_factory_is_ignored():
-    source = '''-- LUAUVMP_HELPER_VAR=M
+    source = '''-- LUAUVMP_FACTORY_SLOT=50
+-- LUAUVMP_HELPER_VAR=M
 -- LUAUVMP_DISPATCH_VAR=w
 while true do local w=opcodes[y]; e=g[y];N=e[4];l=#N;z=M[50](e,{});end'''
     assert upvalues.infer_upvalue_field(source) is None
