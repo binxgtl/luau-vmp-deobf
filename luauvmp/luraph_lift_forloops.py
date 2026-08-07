@@ -64,7 +64,8 @@ def classify(source: str):
         r"(?P=flag)=\((?P=index)<=(?P<limit>" + _ID + r")\);"
         r"else(?P=flag)=\((?P=index)>=(?P=limit)\);end"
         r"ifnot\((?P=flag)\)thenelse"
-        r"R\[@(?P<base_field>" + _FIELD + r")\+3(?:\.0)?\]=\((?P=index)\);"
+        r"R\[@(?P<base_field>" + _FIELD + r")\+3(?:\.0)?\]="
+        r"(?:\((?P=index)\)|(?P=index));"
         r"pc=@(?P<target_field>" + _FIELD + r");end",
         text,
     )
