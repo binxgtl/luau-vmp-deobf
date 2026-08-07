@@ -49,12 +49,13 @@ def _helper_literal(entries: Dict[int, str]) -> str:
 
 
 def _compact_for_shape(text: str) -> str:
-    compact = re.sub(r"\s+", "", text)
-    # Normalize Luau numeric spelling by value while leaving randomized names
-    # untouched: 0b0_1 -> 1, 0x0_1 -> 1, 0x1_F3D -> 7997.
-    return _NUMBER_TOKEN.sub(
-        lambda match: normalize._normal_number(match.group(1)), compact
+    # Normalize numeric tokens while their lexical boundaries still exist, then
+    # remove whitespace. Doing this in the opposite order turns ``or 0b1`` into
+    # ``or0b1`` and prevents a boundary-safe numeric match.
+    normalized = _NUMBER_TOKEN.sub(
+        lambda match: normalize._normal_number(match.group(1)), text
     )
+    return re.sub(r"\s+", "", normalized)
 
 
 def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
@@ -75,8 +76,6 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
             re.fullmatch(r"[A-Za-z_]\w*", arg) is None for arg in args
         ):
             continue
-        # The wrappers observed in v14.7 are short. A bounded window avoids
-        # accidentally matching defaults from a later unrelated function.
         compact = _compact_for_shape(vm_source[match.end():match.end() + 900])
 
         start_name = None
