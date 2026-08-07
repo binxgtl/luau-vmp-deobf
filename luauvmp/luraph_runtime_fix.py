@@ -123,18 +123,44 @@ local TaskCompat = table.freeze({
         telemetry = r'''environment._G = environment
 
 -- Constructor-bearing globals are deliberately not provided. Return a probe
--- only for the two observed names so a blocked ``X.new`` access reports X
--- precisely instead of the ambiguous "index nil with new". The probe cannot
--- construct, call, index through, or expose any Roblox capability.
+-- only for the two observed names so blocked constructor calls report their
+-- bounded argument list without constructing an object or widening capability.
 local blockedConstructorProbes = {}
+local function renderBlockedArgs(...)
+    local input = table.pack(...)
+    local parts = {}
+    local limit = math.min(input.n, 8)
+    for index = 1, limit do
+        local value = input[index]
+        local ok, text = pcall(tostring, value)
+        if not ok then text = "<tostring-error>" end
+        text = string.sub(text, 1, 96)
+        parts[#parts + 1] = tostring(index) .. ":" .. typeof(value) .. "=" .. text
+    end
+    if input.n > limit then
+        parts[#parts + 1] = "...+" .. tostring(input.n - limit)
+    end
+    return table.concat(parts, ", ")
+end
+
 local function blockedConstructorProbe(name)
     local existing = blockedConstructorProbes[name]
     if existing ~= nil then return existing end
     local probe = setmetatable({}, {
         __index = function(_, member)
+            local memberName = tostring(member)
+            if memberName == "new" then
+                return function(...)
+                    error(
+                        "safe-capture blocked constructor " .. name .. ".new("
+                            .. renderBlockedArgs(...) .. ")",
+                        0
+                    )
+                end
+            end
             error(
                 "safe-capture blocked access to missing global "
-                    .. name .. "." .. tostring(member),
+                    .. name .. "." .. memberName,
                 0
             )
         end,
