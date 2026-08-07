@@ -24,6 +24,9 @@ _INSTALLED = False
 _ORIGINAL_RECOVER = None
 _FIELD = r"[EpoH_B]"
 _NUMBER = normalize._NUMBER_TEXT
+_NUMBER_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9_])(" + _NUMBER + r")(?![A-Za-z0-9_])"
+)
 
 
 def _nested_helpers(factory: Path) -> Dict[int, Dict[int, str]]:
@@ -47,12 +50,10 @@ def _helper_literal(entries: Dict[int, str]) -> str:
 
 def _compact_for_shape(text: str) -> str:
     compact = re.sub(r"\s+", "", text)
-    # Luau permits numeric separators (0b0_1, 0x1_F3D, 7_997). Normalize only
-    # numeric tokens; never strip underscores from randomized identifiers.
-    return re.sub(
-        _NUMBER,
-        lambda match: match.group(0).replace("_", ""),
-        compact,
+    # Normalize Luau numeric spelling by value while leaving randomized names
+    # untouched: 0b0_1 -> 1, 0x0_1 -> 1, 0x1_F3D -> 7997.
+    return _NUMBER_TOKEN.sub(
+        lambda match: normalize._normal_number(match.group(1)), compact
     )
 
 
@@ -76,14 +77,12 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
             continue
         # The wrappers observed in v14.7 are short. A bounded window avoids
         # accidentally matching defaults from a later unrelated function.
-        body = vm_source[match.end():match.end() + 900]
-        compact = _compact_for_shape(body)
+        compact = _compact_for_shape(vm_source[match.end():match.end() + 900])
 
         start_name = None
         for arg in args:
             if re.search(
-                r"\b" + re.escape(arg) + r"=" + re.escape(arg)
-                + r"or(?:0[bB]1|0[xX]1|1(?:\.0)?)",
+                r"\b" + re.escape(arg) + r"=" + re.escape(arg) + r"or1\b",
                 compact,
             ):
                 start_name = arg
@@ -110,13 +109,10 @@ def infer_range_helpers(vm_source: str) -> Dict[int, Tuple[int, int, int]]:
         if len({start_name, end_name, table_name}) != 3:
             continue
 
-        normalized = compact.replace(".0", "")
         expr = end_name + "-" + start_name + "+1"
-        if expr not in normalized and ("(" + expr + ")") not in normalized:
+        if expr not in compact and ("(" + expr + ")") not in compact:
             continue
-        if "7997" not in normalized and "0x1f3d" not in normalized.lower():
-            continue
-        if normalized.count("return") < 1:
+        if "7997" not in compact or compact.count("return") < 1:
             continue
 
         slot = normalize._integer(match.group("slot"))
