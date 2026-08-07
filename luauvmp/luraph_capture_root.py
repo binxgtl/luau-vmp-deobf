@@ -21,8 +21,9 @@ _RESOLVER = r'''local function resolveCaptureRoot(directRoot, runtimeState)
     end
 
     -- Search only a deliberately small, deterministic portion of values that
-    -- already exist at the intercepted constructor site.  Never invoke a
-    -- metamethod while probing the wrapper: rawget is required throughout.
+    -- already exist at the intercepted constructor site. ``next`` enumerates
+    -- raw table entries and does not invoke __pairs/__index; this is required
+    -- because public wrappers use large/random numeric keys rather than 1..64.
     local seen = {}
     local queue = {}
     local candidates = {}
@@ -52,9 +53,16 @@ _RESOLVER = r'''local function resolveCaptureRoot(directRoot, runtimeState)
                 candidateSet[value] = true
                 candidates[#candidates + 1] = value
             end
-        elseif item.depth < 2 then
-            for index = 1, 64 do
-                local child = rawget(value, index)
+        elseif item.depth < 3 then
+            local key = nil
+            local scanned = 0
+            while scanned < 128 do
+                local nextKey, child = next(value, key)
+                if nextKey == nil then
+                    break
+                end
+                key = nextKey
+                scanned += 1
                 if type(child) == "table" then
                     enqueue(child, item.depth + 1)
                 end
@@ -63,7 +71,7 @@ _RESOLVER = r'''local function resolveCaptureRoot(directRoot, runtimeState)
     end
 
     if #candidates == 1 then
-        status("resolved wrapped capture root from bounded table search")
+        status("resolved wrapped capture root from bounded raw-table search")
         return candidates[1]
     end
 
@@ -103,6 +111,7 @@ _RESOLVER = r'''local function resolveCaptureRoot(directRoot, runtimeState)
     status(
         "capture root resolution failed: direct=" .. type(directRoot)
             .. ", candidates=" .. tostring(#candidates)
+            .. ", scanned_tables=" .. tostring(#queue)
     )
     return nil
 end
