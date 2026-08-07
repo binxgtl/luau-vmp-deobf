@@ -23,6 +23,7 @@ from . import (
     luraph_lift_chains,
     luraph_lift_forloops,
     luraph_lift_calls,
+    luraph_lift_straightline,
 )
 
 
@@ -164,6 +165,7 @@ def install() -> None:
     luraph_lift_chains.install()
     luraph_lift_forloops.install()
     luraph_lift_calls.install()
+    luraph_lift_straightline.install()
     # ``luraph_fallback_safety`` imports the decompiler before the public lift
     # wrappers are installed, so its module globals still point at the original
     # functions. Rebind to the final composed lifter here, after every lift pass
