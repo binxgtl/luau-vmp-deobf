@@ -102,6 +102,13 @@ from .luraph_proto_mode import install as _install_proto_mode
 _install_proto_layout()
 _install_proto_mode()
 
+# Remove only leading scalar literal locals that are provably never read by the
+# rest of a recovered opcode body. This exposes exact VM statements/branches to
+# the strict lifter without deleting calls, table accesses, or runtime dataflow.
+from .luraph_lift_dead_prefix import install as _install_lift_dead_prefix
+
+_install_lift_dead_prefix()
+
 # Thousands of recovered CFG leaders must not become one recursively nested
 # Luau elseif chain. Keep each PC dispatch chunk bounded without changing any
 # block body or branch semantics.
