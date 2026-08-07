@@ -25,6 +25,7 @@ from . import (
     luraph_lift_calls,
     luraph_lift_straightline,
     luraph_lift_closures,
+    luraph_lift_close_upvalues,
 )
 
 
@@ -171,6 +172,10 @@ def install() -> None:
     # checked against the captured child descriptor table. Its renderer wrapper
     # is installed before balancing snapshots the composed renderer.
     luraph_lift_closures.install()
+    # Close-upvalue lifting composes after closure construction because both use
+    # the same recovered raw-cell layout. It also wraps terminal return handling
+    # so close+return superinstructions preserve evaluation order and arity.
+    luraph_lift_close_upvalues.install()
     # ``luraph_fallback_safety`` imports the decompiler before the public lift
     # wrappers are installed, so its module globals still point at the original
     # functions. Rebind to the final composed lifter here, after every lift pass
