@@ -24,6 +24,32 @@ return l[0X003B](k, l[0X1]);
 '''
 
 
+def _direct_slot50_final_branch_first():
+    return '''
+local S = {}
+S[50] = (function(j, L, T)
+    local x, G = {[1] = 1}, 1
+    return function()
+        while true do
+            local R = x[G]
+            if R == 1 then return L end
+        end
+    end
+end)
+local G = {[26] = {}}
+local L = {}
+local z = 27
+while true do
+    if z == 62 then
+        return G[50](L, G[26]);
+    elseif z == 27 then
+        L = G[50](L, G[26])("bootstrap", G[50]);
+        z = 62
+    end
+end
+'''
+
+
 def _wrapped_slot50():
     return '''
 local M = {}
@@ -50,6 +76,15 @@ def test_prebootstrap_capture_intercepts_slot59_constructor_call():
     assert 'l[0X3b](k, l[0x1])("bootstrap"' not in patched
     assert 'return k;' in patched
     assert 'return l[0X003B](k, l[0X1]);' not in patched
+
+
+def test_prebootstrap_capture_handles_final_branch_lexically_before_bootstrap():
+    patched = prebootstrap._instrument_prebootstrap(_direct_slot50_final_branch_first())
+    assert patched is not None
+    assert 'L=__LUAUVMP_CAPTURE(G,L);' in patched
+    assert 'G[50](L, G[26])("bootstrap"' not in patched
+    assert 'return L;' in patched
+    assert 'return G[50](L, G[26]);' not in patched
 
 
 def test_prebootstrap_capture_preserves_wrapped_return_shape():
