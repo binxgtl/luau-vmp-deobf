@@ -5,6 +5,7 @@ import re
 
 from . import luraph_vararg_semantics as vararg
 from .luraph_vararg_factory_fix import install as _install_factory_fix
+from .luraph_runtime_builtin_semantics import install as _install_runtime_builtins
 
 
 _INSTALLED = False
@@ -36,4 +37,8 @@ def install() -> None:
         return
     _install_factory_fix()
     vararg._compact = compact
+    # This wrapper runs after vararg structural normalization and changes only
+    # direct A[slot](...) callees whose runtime object identity is a trusted
+    # builtin. raw_source remains untouched for audit.
+    _install_runtime_builtins()
     _INSTALLED = True
