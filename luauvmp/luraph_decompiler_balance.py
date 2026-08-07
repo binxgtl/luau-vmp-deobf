@@ -24,6 +24,7 @@ from . import (
     luraph_lift_forloops,
     luraph_lift_calls,
     luraph_lift_straightline,
+    luraph_lift_closures,
 )
 
 
@@ -166,6 +167,10 @@ def install() -> None:
     luraph_lift_forloops.install()
     luraph_lift_calls.install()
     luraph_lift_straightline.install()
+    # Closure lifting needs access to the complete Program so a ProtoRef can be
+    # checked against the captured child descriptor table. Its renderer wrapper
+    # is installed before balancing snapshots the composed renderer.
+    luraph_lift_closures.install()
     # ``luraph_fallback_safety`` imports the decompiler before the public lift
     # wrappers are installed, so its module globals still point at the original
     # functions. Rebind to the final composed lifter here, after every lift pass
