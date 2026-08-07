@@ -28,6 +28,7 @@ from . import (
     luraph_lift_close_upvalues,
     luraph_lift_raw_upvalue_lvalues,
     luraph_lift_raw_upvalue_rvalues,
+    luraph_vararg_semantics,
 )
 
 
@@ -161,6 +162,11 @@ def install() -> None:
     global _ORIGINAL_RENDER, _INSTALLED
     if _INSTALLED:
         return
+    # Install the runtime identity + recover wrapper after prototype-layout
+    # normalization has already been installed by package initialization. This
+    # makes the vararg classifier the outermost recovery pass while capture still
+    # records trusted builtin identities before any pipeline run begins.
+    luraph_vararg_semantics.install()
     luraph_lift_pairs.install()
     luraph_lift_chains.install()
     luraph_lift_forloops.install()
