@@ -1,3 +1,5 @@
+import textwrap
+
 from luauvmp import luraph_environment_semantics as env
 from luauvmp.luraph_full import Instruction
 
@@ -25,7 +27,7 @@ def test_proves_getfenv_slot_and_environment_receiver():
             end,
         })
     '''
-    factory = '''
+    factory = textwrap.dedent('''
         -- LUAUVMP_PUBLIC_V147=1
         -- LUAUVMP_HELPER_VAR=M
         -- LUAUVMP_DISPATCH_VAR=w
@@ -34,7 +36,7 @@ def test_proves_getfenv_slot_and_environment_receiver():
             local G=(M[0b101]());
             while true do local w=x[y]; break; end
         end)
-    '''
+    ''').lstrip()
     semantics = {
         "1": {
             "raw_source": "O[F[y]]=G[D[y]];",
@@ -47,12 +49,12 @@ def test_proves_getfenv_slot_and_environment_receiver():
 
 
 def test_environment_candidate_respects_register_collision_alias():
-    factory = '''
+    factory = textwrap.dedent('''
         -- LUAUVMP_PUBLIC_V147=1
         -- LUAUVMP_HELPER_VAR=S
         -- LUAUVMP_DISPATCH_VAR=H
         -- LUAUVMP_CANONICAL_VARS={"H":"X","I":"_","S":"A","V":"c","s":"u"}
-    '''
+    ''').lstrip()
     assert env._canonical_environment_name(factory, "R") == "__s_R"
 
 
