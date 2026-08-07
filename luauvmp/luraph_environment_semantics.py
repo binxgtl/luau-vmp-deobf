@@ -34,6 +34,13 @@ _ORIGINAL_CLEAN = None
 _ID = r"[A-Za-z_]\w*"
 _NUMBER = normalize._NUMBER_TEXT
 _STRUCTURAL_TARGETS = {"A", "I", "E", "p", "o", "H", "_", "B", "L", "X", "c", "u"}
+_SCRATCH_NAMES = {
+    "M", "V", "h", "r", "z", "Y", "W", "n", "T", "S", "N", "g",
+    "K", "C", "Z", "e", "m", "O", "U", "F", "J", "d", "b", "y",
+    "t", "a", "i", "w", "l", "Q", "G",
+    "__s_A", "__s_I", "__s_E", "__s_p", "__s_o", "__s_H", "__s__",
+    "__s_B", "__s_L", "__s_X", "__s_c", "__s_u", "__s_R",
+}
 
 
 def _code_only(source: str) -> str:
@@ -224,7 +231,7 @@ def recover_dispatch(factory, runtime_facts, output, text_output=None):
 
 
 def clean_environment_statement(source, ins):
-    """Lift exact GETGLOBAL/SETGLOBAL shapes after ``__ENV`` proof."""
+    """Lift exact environment access shapes after ``__ENV`` proof."""
     text = luraph_lift.compact(source).rstrip(";")
     for _ in range(2):
         updated = text.replace("(__ENV)", "__ENV")
@@ -268,6 +275,30 @@ def clean_environment_statement(source, ins):
             luraph_lift.field_value(ins, match.group("src"))
         )
         return "__env[%s] = %s" % (key, value)
+
+    # Some public superinstructions stage GETGLOBAL through persistent scratch
+    # locals instead of writing the VM register directly.  Preserve that state
+    # edge exactly, but only for the three-statement table/key/load chain over
+    # decompiler-declared scratch names.
+    match = re.fullmatch(
+        r"(?P<table>[A-Za-z_]\w*)=__ENV;"
+        r"(?P<keyvar>[A-Za-z_]\w*)=@(?P<field>[EpoH_B]);"
+        r"(?P=table)=(?P=table)\[(?P=keyvar)\]",
+        text,
+    )
+    if match:
+        table = match.group("table")
+        keyvar = match.group("keyvar")
+        if table not in _SCRATCH_NAMES or keyvar not in _SCRATCH_NAMES:
+            return None
+        key = luraph_lift.value_expr(
+            luraph_lift.field_value(ins, match.group("field"))
+        )
+        return "\n".join([
+            "%s = __env" % table,
+            "%s = %s" % (keyvar, key),
+            "%s = %s[%s]" % (table, table, keyvar),
+        ])
     return None
 
 
