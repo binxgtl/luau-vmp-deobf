@@ -29,6 +29,7 @@ from . import (
     luraph_lift_raw_upvalue_lvalues,
     luraph_lift_raw_upvalue_rvalues,
     luraph_vararg_semantics,
+    luraph_vararg_compact_fix,
 )
 
 
@@ -42,18 +43,11 @@ def _indent_one(lines: Sequence[str]) -> List[str]:
 
 
 def _parse_dispatch(lines: Sequence[str], start: int):
-    """Parse one exact flat dispatcher emitted by ``decompile_proto``.
-
-    Return ``(end, branches, invalid_body)`` where ``end`` is the line index of
-    the closing ``    end`` for ``while true do``. Return ``None`` for anything
-    not matching the backend's exact shape; unknown source is never rewritten.
-    """
     if start + 2 >= len(lines) or lines[start] != "    while true do":
         return None
     first = _FIRST.match(lines[start + 1])
     if first is None:
         return None
-
     headers: List[Tuple[int, int]] = [(start + 1, int(first.group("pc")))]
     final_else = None
     outer_if_end = None
@@ -74,14 +68,11 @@ def _parse_dispatch(lines: Sequence[str], start: int):
                 probe += 1
             break
         cursor += 1
-
     if final_else is None or outer_if_end is None or not headers:
         return None
-
     pcs = [pc for _index, pc in headers]
     if pcs != sorted(pcs) or len(set(pcs)) != len(pcs):
         return None
-
     branches = []
     for pos, (header_index, pc) in enumerate(headers):
         body_start = header_index + 1
@@ -118,7 +109,6 @@ def _render_balanced(branches, invalid_body, chunk_size: int) -> List[str]:
 
 
 def balance_pc_dispatches(source: str, chunk_size: int = _CHUNK_SIZE) -> str:
-    """Balance only exact generated PC dispatch chains larger than ``chunk_size``."""
     if chunk_size < 2:
         raise ValueError("pc dispatch chunk size must be at least 2")
     trailing_newline = source.endswith("\n")
@@ -162,11 +152,8 @@ def install() -> None:
     global _ORIGINAL_RENDER, _INSTALLED
     if _INSTALLED:
         return
-    # Install the runtime identity + recover wrapper after prototype-layout
-    # normalization has already been installed by package initialization. This
-    # makes the vararg classifier the outermost recovery pass while capture still
-    # records trusted builtin identities before any pipeline run begins.
     luraph_vararg_semantics.install()
+    luraph_vararg_compact_fix.install()
     luraph_lift_pairs.install()
     luraph_lift_chains.install()
     luraph_lift_forloops.install()
