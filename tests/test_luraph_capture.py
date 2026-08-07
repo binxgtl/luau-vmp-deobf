@@ -95,7 +95,8 @@ def test_lune_runner_supplies_bootstrap_compatibility_without_privileges():
 def test_missing_global_telemetry_never_yields_from_metamethod():
     runner = build_lune_runner('vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv')
     assert 'local missingSafeGlobals = {}' in runner
-    assert 'missingSafeGlobals[tostring(key)] = true' in runner
+    assert 'local name = tostring(key)' in runner
+    assert 'missingSafeGlobals[name] = true' in runner
     assert 'status("missing safe-capture global: "' not in runner
     assert 'status("missing safe-capture globals: "' in runner
     assert 'local parserOk, parserResult = pcall(chunk, buffer.fromstring(bytecode))' in runner
