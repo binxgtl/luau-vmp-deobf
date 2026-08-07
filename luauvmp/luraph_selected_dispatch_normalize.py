@@ -12,6 +12,7 @@ from . import luraph_semantic_normalize as normalize
 _INSTALLED = False
 _ORIGINAL_REWRITE = None
 _OPERAND_CANONICAL = {"E", "p", "o", "H", "_", "B"}
+_SELECTED_ROLES = {"X", "u", "c"}
 
 
 def _selected_names(data: dict):
@@ -87,24 +88,43 @@ def _selected_register(data: dict, mapping: Dict[str, str], pc_name: str) -> Opt
 
 
 def _selected_mapping(data: dict, mapping: Dict[str, str]) -> Dict[str, str]:
-    """Extend the factory mapping with the dispatcher actually recovered."""
+    """Replace small-mode roles with the dispatcher that was actually recovered.
+
+    Factory extraction initially records one syntactic dispatcher.  The later
+    multi-mode selector can choose a different interpreter that uses different
+    opcode, PC, and register locals.  Keeping both sets of role mappings can
+    collapse unrelated locals onto the same canonical identifier (for example a
+    state-machine local and the selected opcode both becoming ``X``), corrupting
+    recovered semantics.  The selected mode is authoritative for X/u/c; operand,
+    helper, and environment mappings remain unchanged.
+    """
     opcode_name, pc_name = _selected_names(data)
     if opcode_name is None or pc_name is None:
         return dict(mapping)
 
-    result = dict(mapping)
+    original = dict(mapping)
     additions = [(opcode_name, "X"), (pc_name, "u")]
-    register = _selected_register(data, result, pc_name)
+    register = _selected_register(data, original, pc_name)
     if register is not None:
         additions.append((register, "c"))
 
+    # A selected local may already have a non-dispatch structural role.  That is
+    # ambiguous and must fail closed rather than silently replacing it.
     for name, canonical in additions:
-        existing = result.get(name)
+        existing = original.get(name)
         if existing is not None and existing != canonical:
             raise luraph_capture.CaptureError(
                 "selected public dispatcher local %s conflicts with canonical %s"
                 % (name, existing)
             )
+
+    owners = {canonical: name for name, canonical in additions}
+    result = {
+        name: canonical
+        for name, canonical in original.items()
+        if canonical not in _SELECTED_ROLES or owners.get(canonical) == name
+    }
+    for name, canonical in additions:
         result[name] = canonical
     return result
 
