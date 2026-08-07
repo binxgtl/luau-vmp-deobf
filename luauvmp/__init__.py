@@ -106,8 +106,10 @@ _install_proto_mode()
 # rest of a recovered opcode body. This exposes exact VM statements/branches to
 # the strict lifter without deleting calls, table accesses, or runtime dataflow.
 from .luraph_lift_dead_prefix import install as _install_lift_dead_prefix
+from .luraph_lift_rhs_parens import install as _install_lift_rhs_parens
 
 _install_lift_dead_prefix()
+_install_lift_rhs_parens()
 
 # Thousands of recovered CFG leaders must not become one recursively nested
 # Luau elseif chain. Keep each PC dispatch chunk bounded without changing any
