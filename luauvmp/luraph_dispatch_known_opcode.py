@@ -1,21 +1,21 @@
 """Expose proven current-opcode array reads to the public dispatcher evaluator.
 
-The public factory metadata maps randomized locals to canonical roles.  When it
+The public factory metadata maps randomized locals to canonical roles. When it
 proves three distinct names for the opcode array (``L``), current PC (``u``) and
-already-fetched dispatch value (``X``), an expression ``raw_L[raw_u]`` is exactly
-the same value as ``raw_X`` for the current dispatcher iteration.
+already-fetched dispatch value (``X``), a later expression ``raw_L[raw_u]`` is
+exactly the same value as ``raw_X`` for that dispatcher iteration.
 
-The legacy expression evaluator already treats the dispatch value as the opcode
-being specialized, but it cannot infer arbitrary array indexing.  This wrapper
-rewrites only that exact token pattern in a temporary copy of the factory before
-recovery.  The committed/original factory artifact is never modified.
+The defining fetch itself must remain intact: rewriting ``local raw_X =
+raw_L[raw_u]`` into ``local raw_X = raw_X`` destroys the structural evidence used
+to locate the dispatcher. This pass therefore requires exactly one defining
+fetch, preserves it byte-for-byte, and rewrites only subsequent executable reads
+(including the cosmetic ``(raw_L)[raw_u]`` spelling) in a temporary factory copy.
 """
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 import json
-import os
 import re
 import tempfile
 
@@ -44,9 +44,7 @@ def _roles(source: str) -> Optional[Dict[str, str]]:
             if canonical in inverse and inverse[canonical] != raw:
                 return None
             inverse[canonical] = str(raw)
-    if set(inverse) != {"L", "u", "X"}:
-        return None
-    if len(set(inverse.values())) != 3:
+    if set(inverse) != {"L", "u", "X"} or len(set(inverse.values())) != 3:
         return None
     return inverse
 
@@ -65,24 +63,47 @@ def _code_only(source: str) -> str:
     return "".join(pieces)
 
 
+def _read_pattern(raw_array: str, raw_pc: str) -> str:
+    return (
+        r"(?:\(\s*" + re.escape(raw_array) + r"\s*\)|(?<![A-Za-z0-9_])"
+        + re.escape(raw_array) + r")\s*\[\s*" + re.escape(raw_pc)
+        + r"\s*\](?![A-Za-z0-9_])"
+    )
+
+
+def _defining_read_span(code: str, raw_array: str, raw_pc: str,
+                        raw_value: str) -> Optional[Tuple[int, int]]:
+    pattern = re.compile(
+        r"\blocal\s+" + re.escape(raw_value) + r"\s*=\s*\(?\s*"
+        r"(?P<read>" + _read_pattern(raw_array, raw_pc) + r")\s*\)?\s*;?"
+    )
+    matches = list(pattern.finditer(code))
+    if len(matches) != 1:
+        return None
+    return matches[0].span("read")
+
+
 def rewrite_current_opcode_reads(source: str) -> str:
     roles = _roles(source)
     if roles is None:
         return source
     raw_array, raw_pc, raw_value = roles["L"], roles["u"], roles["X"]
     code = _code_only(source)
-    pattern = re.compile(
-        r"(?<![A-Za-z0-9_])" + re.escape(raw_array)
-        + r"\s*\[\s*" + re.escape(raw_pc) + r"\s*\]"
-        r"(?![A-Za-z0-9_])"
-    )
+    defining = _defining_read_span(code, raw_array, raw_pc, raw_value)
+    if defining is None:
+        return source
+    pattern = re.compile(_read_pattern(raw_array, raw_pc))
     pieces = []
     cursor = 0
+    changed = False
     for match in pattern.finditer(code):
+        if match.span() == defining:
+            continue
         pieces.append(source[cursor:match.start()])
         pieces.append(raw_value)
         cursor = match.end()
-    if not pieces:
+        changed = True
+    if not changed:
         return source
     pieces.append(source[cursor:])
     return "".join(pieces)
@@ -108,9 +129,7 @@ def recover_dispatch(factory, runtime_facts, output, text_output=None):
     try:
         with handle:
             handle.write(rewritten)
-        return _ORIGINAL_RECOVER(
-            temporary, runtime_facts, output, text_output
-        )
+        return _ORIGINAL_RECOVER(temporary, runtime_facts, output, text_output)
     finally:
         try:
             temporary.unlink()
