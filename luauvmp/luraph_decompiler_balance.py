@@ -32,8 +32,8 @@ from . import (
     luraph_vararg_compact_fix,
     luraph_runtime_coroutine_identities,
     luraph_lift_generic_for_state,
+    luraph_dispatch_known_opcode,
 )
-
 
 _CHUNK_SIZE = 64
 _FIRST = re.compile(r"^        if pc == (?P<pc>-?[0-9]+) then$")
@@ -89,16 +89,11 @@ def _render_balanced(branches, invalid_body, chunk_size: int) -> List[str]:
     chunks = [branches[index:index + chunk_size]
               for index in range(0, len(branches), chunk_size)]
     for chunk_index, chunk in enumerate(chunks):
-        last_pc = chunk[-1][0]
-        output.append(
-            "        %s pc <= %d then" %
-            ("if" if chunk_index == 0 else "elseif", last_pc)
-        )
+        output.append("        %s pc <= %d then" %
+                      ("if" if chunk_index == 0 else "elseif", chunk[-1][0]))
         for branch_index, (pc, body) in enumerate(chunk):
-            output.append(
-                "            %s pc == %d then" %
-                ("if" if branch_index == 0 else "elseif", pc)
-            )
+            output.append("            %s pc == %d then" %
+                          ("if" if branch_index == 0 else "elseif", pc))
             output.extend(_indent_one(body))
         output.append("            else")
         output.extend(_indent_one(invalid_body))
@@ -120,14 +115,10 @@ def balance_pc_dispatches(source: str, chunk_size: int = _CHUNK_SIZE) -> str:
     while cursor < len(lines):
         parsed = _parse_dispatch(lines, cursor)
         if parsed is None:
-            output.append(lines[cursor])
-            cursor += 1
-            continue
+            output.append(lines[cursor]); cursor += 1; continue
         end, branches, invalid_body = parsed
-        if len(branches) <= chunk_size:
-            output.extend(lines[cursor:end + 1])
-        else:
-            output.extend(_render_balanced(branches, invalid_body, chunk_size))
+        output.extend(lines[cursor:end + 1] if len(branches) <= chunk_size
+                      else _render_balanced(branches, invalid_body, chunk_size))
         cursor = end + 1
     result = "\n".join(output)
     return result + ("\n" if trailing_newline else "")
@@ -139,9 +130,7 @@ _INSTALLED = False
 
 def render_program(program, semantics):
     if _ORIGINAL_RENDER is None:
-        raise luraph_decompiler.DecompileError(
-            "balanced decompiler renderer is unavailable"
-        )
+        raise luraph_decompiler.DecompileError("balanced decompiler renderer is unavailable")
     source, metrics = _ORIGINAL_RENDER(program, semantics)
     balanced = balance_pc_dispatches(source)
     metrics = dict(metrics)
@@ -154,15 +143,13 @@ def install() -> None:
     global _ORIGINAL_RENDER, _INSTALLED
     if _INSTALLED:
         return
-    # Identity-only coroutine telemetry must be installed before vararg semantics
-    # installs the shared runtime-identity capture wrapper.
     luraph_runtime_coroutine_identities.install()
     luraph_vararg_semantics.install()
     luraph_vararg_compact_fix.install()
-    # At this point direct A[slot](...) calls with proven runtime identities have
-    # already been literalized, so generic-for setup/step can require explicit
-    # coroutine.wrap/yield names rather than randomized slot numbers.
     luraph_lift_generic_for_state.install()
+    # Outermost recovery wrapper: only a metadata-proven raw_L[raw_u] read is
+    # rewritten to the already-fetched raw_X value in a temporary factory copy.
+    luraph_dispatch_known_opcode.install()
     luraph_lift_pairs.install()
     luraph_lift_chains.install()
     luraph_lift_forloops.install()
