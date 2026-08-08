@@ -100,3 +100,11 @@ end'''
 def test_vararg_copy_rejects_different_source_table():
     source = 'e=({...}); for x=1,p[u] do c[x]=other[x]; end'
     assert calls.clean_statement(source, ins()) is None
+
+
+def test_lifts_persistent_scratch_call_and_transfer():
+    assert calls.clean_statement('x(); x=(r);', ins()) == 'x(); x = r'
+
+
+def test_scratch_call_rejects_unknown_identifier():
+    assert calls.clean_statement('outside(); outside=r;', ins()) is None

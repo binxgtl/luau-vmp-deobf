@@ -53,6 +53,33 @@ def test_recognizes_numeric_for_loop_and_resolves_both_conditions():
     assert loops.resolved_if_count(source) == 2
 
 
+def test_recognizes_split_numeric_for_step_and_resolves_condition():
+    source = '''
+        x=false;
+        W+=Q;
+        if not(Q<=0) then x=(W<=U); else x=W>=U; end
+    '''
+    kind, fields = loops.classify(source)
+    assert kind == "split_loop"
+    assert fields == {
+        "flag": "x", "index": "W", "step": "Q", "limit": "U",
+    }
+    assert loops.resolved_if_count(source) == 1
+
+
+def test_recognizes_generic_for_step_and_resolves_condition():
+    source = '''
+        x=E[u]; v,m,__s__=W();
+        if v then c[x+1]=m; c[x+2]=__s__; u=B[u]; end
+    '''
+    kind, fields = loops.classify(source)
+    assert kind == "generic_loop"
+    assert fields["base_field"] == "E"
+    assert fields["target_field"] == "B"
+    assert fields["iterator"] == "W"
+    assert loops.resolved_if_count(source) == 1
+
+
 def test_rejects_inconsistent_forloop_def_use_chain():
     source = '''
         M=false;

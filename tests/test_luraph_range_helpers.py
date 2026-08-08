@@ -89,6 +89,13 @@ def test_rewrites_range_calls_using_recovered_argument_roles():
     ) == 'table.unpack(R,start,finish)'
 
 
+def test_rewrites_proven_top_level_helpers_without_touching_strings():
+    source = 'A[13](c[E[u]], c[B[u]]); local s="A[13](x,y)"'
+    assert helpers.rewrite_source(
+        source, {}, direct_helpers={13: "bit32.bxor"}
+    ) == 'bit32.bxor(c[E[u]], c[B[u]]); local s="A[13](x,y)"'
+
+
 def test_balanced_arguments_are_not_split_inside_nested_calls():
     source = 'A[26](finish,start,R[key(a,b)])'
     assert helpers._rewrite_range_calls(
@@ -126,7 +133,7 @@ def test_nested_helper_rewrite_ignores_comments_and_strings():
     )
     expected = (
         'local quoted="A[52][E[u]]"; -- A[52][E[u]]\n'
-        'return ({[9]=bit32.rshift})[E[u]];'
+        'return __LUAUVMP_HELPER_TABLE(52,{[9]=bit32.rshift})[E[u]];'
     )
     assert helpers.rewrite_source(
         source, {52: {9: 'bit32.rshift'}}
@@ -139,3 +146,35 @@ def test_unrecognized_helper_shape_is_not_rewritten():
     assert helpers.infer_range_helpers(
         'd[27]=function(M,p,A) return M[p] end'
     ) == {}
+
+
+def test_materializes_identical_nested_helpers_as_shared_mutable_state():
+    literal = "{[5]=bit32.bxor,[6]=bit32.band}"
+    marker = "__LUAUVMP_HELPER_TABLE(52,%s)" % literal
+    rewritten, tables = helpers.materialize_helper_tables({
+        1: marker + "[E[u]]=c[B[u]]",
+        2: "c[o[u]]=(" + marker + "[E[u]])",
+    })
+    assert tables == [
+        ("__VMHELPER_52", literal),
+    ]
+    assert rewritten == {
+        1: "__VMHELPER_52[E[u]]=c[B[u]]",
+        2: "c[o[u]]=(__VMHELPER_52[E[u]])",
+    }
+
+
+def test_keeps_equal_helper_table_contents_in_distinct_vm_slots():
+    literal = "{[5]=bit32.bxor}"
+    rewritten, tables = helpers.materialize_helper_tables({
+        1: "__LUAUVMP_HELPER_TABLE(41,%s)[E[u]]" % literal,
+        2: "__LUAUVMP_HELPER_TABLE(52,%s)[E[u]]" % literal,
+    })
+    assert tables == [
+        ("__VMHELPER_41", literal),
+        ("__VMHELPER_52", literal),
+    ]
+    assert rewritten == {
+        1: "__VMHELPER_41[E[u]]",
+        2: "__VMHELPER_52[E[u]]",
+    }

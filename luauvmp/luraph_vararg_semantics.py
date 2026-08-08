@@ -24,6 +24,7 @@ import re
 
 from . import luraph_lift, luraph_recover
 from . import luraph_public_v147 as public
+from .luraph_public_string_eval import _decode_luau_quoted
 from . import luraph_semantic_collisions as collisions
 from . import luraph_semantic_normalize as normalize
 from .luraph_runtime_identities import install as _install_runtime_identities
@@ -38,7 +39,7 @@ _NUMBER = normalize._NUMBER_TEXT
 _ALLOWED_SCRATCH = {
     "M", "V", "h", "r", "z", "Y", "W", "n", "T", "S", "N", "g",
     "K", "C", "Z", "e", "m", "O", "U", "F", "J", "d", "b", "y",
-    "t", "a", "i", "w", "l", "Q", "G", "P",
+    "t", "a", "i", "w", "l", "Q", "G", "P", "k", "x", "v", "q",
     "__s_A", "__s_I", "__s_E", "__s_p", "__s_o", "__s_H", "__s__",
     "__s_B", "__s_L", "__s_X", "__s_c", "__s_u", "__s_R",
 }
@@ -68,8 +69,8 @@ def infer_packer_slot(vm_source: str, helper: str,
     if not helper or not select_slots:
         return None
     assignment = re.compile(
-        r"(?:\(\s*" + re.escape(helper) + r"\s*\)|(?<![A-Za-z0-9_])"
-        + re.escape(helper) + r")\s*\[\s*(?P<slot>" + _NUMBER
+        r"(?:\(\s*)?(?P<table>" + _ID + r")(?:\s*\))?\s*"
+        r"\[\s*(?P<slot>" + _NUMBER
         + r")\s*\]\s*=\s*\(?\s*(?P<function>function)\s*\(\s*\.\.\.\s*\)",
         re.S,
     )
@@ -77,14 +78,18 @@ def infer_packer_slot(vm_source: str, helper: str,
     for match in assignment.finditer(vm_source):
         end = public._function_end(vm_source, match.start("function"))
         body = vm_source[match.end():end]
+        table = match.group("table")
         count_match = re.search(
             r"\blocal\s+(?P<count>" + _ID + r")\s*=\s*"
-            + re.escape(helper) + r"\s*\[\s*(?P<select>" + _NUMBER
-            + r")\s*\]\s*\(\s*([\"'])#\3\s*,\s*\.\.\.\s*\)",
+            + re.escape(table) + r"\s*\[\s*(?P<select>" + _NUMBER
+            + r")\s*\]\s*\(\s*(?P<label>\"(?:\\.|[^\"\\])*\"|"
+            r"'(?:\\.|[^'\\])*')\s*,\s*\.\.\.\s*\)",
             body,
             re.S,
         )
         if count_match is None:
+            continue
+        if _decode_luau_quoted(count_match.group("label")) != "#":
             continue
         select_slot = _slot_token(count_match.group("select"))
         if select_slot not in select_slots:
@@ -101,7 +106,7 @@ def infer_packer_slot(vm_source: str, helper: str,
         # this proves the second result is the packed argument table on both paths.
         if re.search(
             r"\breturn\s+" + re.escape(count) + r"\s*,\s*"
-            + re.escape(helper) + r"\s*\[\s*" + _NUMBER + r"\s*\]\s*;?",
+            + re.escape(table) + r"\s*\[\s*" + _NUMBER + r"\s*\]\s*;?",
             body,
             re.S,
         ) is None:
@@ -125,7 +130,7 @@ def _factory_mapping(factory_source: str) -> Dict[str, str]:
 def infer_factory_varargs(factory_source: str, helper: str,
                           packer_slot: int) -> Optional[Tuple[str, str]]:
     pattern = re.compile(
-        r"\blocal\s+(?P<count>" + _ID + r")\s*,\s*(?P<table>" + _ID
+        r"\b(?:local\s+)?(?P<count>" + _ID + r")\s*,\s*(?P<table>" + _ID
         + r")\s*=\s*(?:\(\s*" + re.escape(helper) + r"\s*\)|"
         + re.escape(helper) + r")\s*\[\s*" + str(packer_slot)
         + r"(?:\.0)?\s*\]\s*\(\s*\.\.\.\s*\)",
@@ -157,17 +162,32 @@ def _scratch(*names: str) -> bool:
     return all(name in _ALLOWED_SCRATCH for name in names)
 
 
-def classify_vararg(source: str, count_name: str,
-                    table_name: str) -> Optional[Tuple[str, Tuple[str, ...], str, int]]:
+def classify_vararg(source: str, count_name: str, table_name: str,
+                    packer_slot: Optional[int] = None
+                    ) -> Optional[Tuple[str, Tuple[str, ...], str, int]]:
     """Return ``(kind, scratch_names, operand_field, resolved_ifs)``."""
     text = _compact(source)
     count = re.escape(count_name)
     table = re.escape(table_name)
 
+    # The pack operation itself is liftable only after recover_dispatch has
+    # proven this exact helper slot from builtin select identity and factory
+    # def/use evidence.  Direct classifier callers cannot opt into this shape
+    # by spelling an arbitrary A slot.
+    match = re.fullmatch(
+        count + r"," + table + r"=A\[(?P<packer>\d+)\]\(\.\.\.\)",
+        text,
+    )
+    if (
+        match is not None and packer_slot is not None
+        and int(match.group("packer")) == packer_slot
+    ):
+        return "pack", (count_name, table_name), "", 0
+
     match = re.fullmatch(
         r"(?P<n>" + _ID + r")=(?P<field>" + _FIELD + r")\[u\];"
-        r"for" + count + r"=1,(?P=n)do"
-        r"c\[" + count + r"\]=" + table + r"\[" + count + r"\];end"
+        r"for(?P<loop>" + _ID + r")=1,(?P=n)do"
+        r"c\[(?P=loop)\]=" + table + r"\[(?P=loop)\];end"
         r"(?P<cursor>" + _ID + r")=(?P=n)\+1",
         text,
     )
@@ -175,11 +195,26 @@ def classify_vararg(source: str, count_name: str,
         return "prefix", (match.group("n"), match.group("cursor")), match.group("field"), 0
 
     match = re.fullmatch(
+        r"(?P<n>" + _ID + r")=(?P<field>" + _FIELD + r")\[u\];"
+        + count + r"," + table + r"=A\[(?P<packer>\d+)\]\(\.\.\.\);"
+        r"for(?P<loop>" + _ID + r")=1,(?P=n)do"
+        r"c\[(?P=loop)\]=" + table + r"\[(?P=loop)\];end"
+        r"(?P<cursor>" + _ID + r")=(?P=n)\+1",
+        text,
+    )
+    if (
+        match is not None and packer_slot is not None
+        and int(match.group("packer")) == packer_slot
+        and _scratch(match.group("n"), match.group("cursor"))
+    ):
+        return "prefix", (match.group("n"), match.group("cursor")), match.group("field"), 0
+
+    match = re.fullmatch(
         r"(?P<dst>" + _ID + r")=(?P<field>" + _FIELD + r")\[u\];"
         r"(?P<off>" + _ID + r")=0;"
-        r"for" + count + r"=(?P=dst),(?P=dst)\+\((?P<cfield>" + _FIELD
-        + r")\[u\]-1\)do"
-        r"c\[" + count + r"\]=" + table + r"\[(?P<cursor>" + _ID
+        r"for(?P<loop>" + _ID + r")=(?P=dst),(?P=dst)\+\((?P<cfield>" + _FIELD
+        + r")\[u\]-1\)(?:,1(?:\.0)?)?do"
+        r"c\[(?P=loop)\]=" + table + r"\[(?P<cursor>" + _ID
         + r")\+(?P=off)\];(?P=off)\+=1;end",
         text,
     )
@@ -199,10 +234,11 @@ def classify_vararg(source: str, count_name: str,
         r"(?P<len>" + _ID + r")=" + count + r"-(?P<used>" + _ID + r")-1;"
     )
     suffix = (
-        r"(?P<off>" + _ID + r")=0;for" + count + r"=(?P=dst),(?P=dst)\+(?P=len)do"
-        r"c\[" + count + r"\]=" + table + r"\[(?P<cursor>" + _ID
+        r"(?P<off>" + _ID + r")=0;for(?P<loop>" + _ID + r")=(?P=dst),(?P=dst)\+(?P=len)"
+        r"(?:,1(?:\.0)?)?do"
+        r"c\[(?P=loop)\]=" + table + r"\[(?P<cursor>" + _ID
         + r")\+(?P=off)\];(?P=off)\+=1;end"
-        r"(?P<top>" + _ID + r")=(?P=dst)\+(?P=len)"
+        r"(?P<top>" + _ID + r")=\(?(?P=dst)\+(?P=len)\)?"
     )
     clamp_forms = [
         r"ifnot\((?P=len)<0\)thenelse(?P=len)=-1;end",
@@ -227,6 +263,8 @@ def classify_vararg(source: str, count_name: str,
 
 
 def _marker(kind: str, names: Tuple[str, ...], field: str) -> str:
+    if kind == "pack":
+        return "__LUAUVMP_VARARG_PACK(%s)" % ",".join(names)
     return "__LUAUVMP_VARARG_%s(%s,@%s)" % (
         kind.upper(), ",".join(names), field
     )
@@ -263,7 +301,7 @@ def recover_dispatch(factory, runtime_facts, output, text_output=None):
         if not isinstance(entry, dict):
             continue
         source = entry.get("source", "")
-        classified = classify_vararg(source, count_name, table_name)
+        classified = classify_vararg(source, count_name, table_name, packer)
         if classified is None:
             continue
         kind, names, field, resolved = classified
@@ -295,6 +333,15 @@ def clean_statement(source, ins):
     if existing is not None:
         return existing
     text = source.strip().rstrip(";")
+
+    match = re.fullmatch(
+        r"__LUAUVMP_VARARG_PACK\((?P<count>" + _ID + r"),(?P<table>"
+        + _ID + r")\)", text
+    )
+    if match:
+        return "%s = argv.n; %s = argv" % (
+            match.group("count"), match.group("table"),
+        )
 
     match = re.fullmatch(
         r"__LUAUVMP_VARARG_PREFIX\((?P<n>" + _ID + r"),(?P<cursor>" + _ID

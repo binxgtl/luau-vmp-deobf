@@ -149,15 +149,65 @@ def _classify_loop(text: str):
     return None
 
 
+def _classify_split_loop(text: str):
+    """Recognize a loop step/compare whose branch/store lives in another opcode."""
+    patterns = (
+        r"(?P<flag>" + _ID + r")=false;"
+        r"(?P<index>" + _ID + r")\+=(?P<step>" + _ID + r");"
+        r"ifnot\((?P=step)<=0(?:\.0)?\)then"
+        r"(?P=flag)=(?P=index)<=(?P<limit>" + _ID + r");"
+        r"else(?P=flag)=(?P=index)>=(?P=limit);end",
+        r"(?P<flag>" + _ID + r")=false;"
+        r"(?P<index>" + _ID + r")\+=(?P<step>" + _ID + r");"
+        r"if(?P=step)<=0(?:\.0)?then"
+        r"(?P=flag)=(?P=index)>=(?P<limit>" + _ID + r");"
+        r"else(?P=flag)=(?P=index)<=(?P=limit);end",
+    )
+    for pattern in patterns:
+        match = re.fullmatch(pattern, text)
+        if match is None:
+            continue
+        fields = match.groupdict()
+        if len({fields["flag"], fields["index"], fields["step"], fields["limit"]}) != 4:
+            return None
+        return "split_loop", fields
+    return None
+
+
+def _classify_generic_loop(text: str):
+    match = re.fullmatch(
+        r"(?P<base>" + _ID + r")=@(?P<base_field>" + _FIELD + r");"
+        r"(?P<first>" + _ID + r"),(?P<second>" + _ID + r"),(?P<third>"
+        + _ID + r")=(?P<iterator>" + _ID + r")\(\);"
+        r"if(?P=first)then"
+        r"R\[(?P=base)\+1(?:\.0)?\]=(?P=second);"
+        r"R\[(?P=base)\+2(?:\.0)?\]=(?P=third);"
+        r"pc=@(?P<target_field>" + _FIELD + r");end",
+        text,
+    )
+    if match is None:
+        return None
+    fields = match.groupdict()
+    if len({fields["first"], fields["second"], fields["third"]}) != 3:
+        return None
+    return "generic_loop", fields
+
+
 def classify(source: str):
     """Return ``(kind, fields)`` for a fully proven numeric-for operation."""
     text = _text(source)
-    return _classify_prep(text) or _classify_restore(text) or _classify_loop(text)
+    return (
+        _classify_prep(text) or _classify_restore(text)
+        or _classify_loop(text) or _classify_split_loop(text)
+        or _classify_generic_loop(text)
+    )
 
 
 def resolved_if_count(source: str) -> int:
     hit = classify(source)
-    return 2 if hit is not None and hit[0] == "loop" else 0
+    if hit is None:
+        return 0
+    return {"loop": 2, "split_loop": 1, "generic_loop": 1}.get(hit[0], 0)
 
 
 def _value(ins, field: str) -> str:
@@ -219,13 +269,46 @@ def _replacement(kind, fields, ins, next_pc):
             "            continue",
         ])
         return "\n".join(lines)
+
+    if kind == "split_loop":
+        if next_pc is not None:
+            lines.append("            pc = %d" % next_pc)
+        lines.extend([
+            "            __for_index += __for_step",
+            "            if not (__for_step <= 0) then",
+            "                %s = (__for_index <= __for_limit)" % fields["flag"],
+            "            else",
+            "                %s = (__for_index >= __for_limit)" % fields["flag"],
+            "            end",
+        ])
+        return "\n".join(lines)
+
+    if kind == "generic_loop":
+        base = _value(ins, fields["base_field"])
+        target = _value(ins, fields["target_field"])
+        lines.extend([
+            "            local __iter_first, __iter_second, __iter_third = %s()"
+            % fields["iterator"],
+            "            if __iter_first then",
+            "                R[%s + 1] = __iter_second" % base,
+            "                R[%s + 2] = __iter_third" % base,
+            "                pc = %s" % target,
+            "            else",
+            ("                pc = %d" % next_pc) if next_pc is not None else "                return",
+            "            end",
+            "            continue",
+        ])
+        return "\n".join(lines)
     raise AssertionError(kind)
 
 
 def decompile_proto(proto, semantics, prepared):
     source, metrics = _ORIGINAL_DECOMPILE(proto, semantics, prepared)
     replacements = 0
-    kinds = {"prep": 0, "restore": 0, "loop": 0}
+    kinds = {
+        "prep": 0, "restore": 0, "loop": 0, "split_loop": 0,
+        "generic_loop": 0,
+    }
 
     for block in luraph_decompiler.build_blocks(proto, semantics):
         for pos, ins in enumerate(block.instructions):
@@ -270,6 +353,10 @@ def decompile_proto(proto, semantics, prepared):
     metrics["numeric_for_prep"] = metrics.get("numeric_for_prep", 0) + kinds["prep"]
     metrics["numeric_for_restore"] = metrics.get("numeric_for_restore", 0) + kinds["restore"]
     metrics["numeric_for_loop"] = metrics.get("numeric_for_loop", 0) + kinds["loop"]
+    metrics["numeric_for_split_loop"] = (
+        metrics.get("numeric_for_split_loop", 0) + kinds["split_loop"]
+    )
+    metrics["generic_for_loop"] = metrics.get("generic_for_loop", 0) + kinds["generic_loop"]
     return source, metrics
 
 

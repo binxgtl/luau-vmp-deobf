@@ -24,6 +24,7 @@ _INSTALLED = False
 _ORIGINAL_CLEAN = None
 _ORIGINAL_RENDER = None
 _CURRENT_PROGRAM: Optional[Program] = None
+_CURRENT_CELL_LAYOUT: Optional[Tuple[int, int]] = None
 _ID = r"[A-Za-z_]\w*"
 _FIELD = r"[EpoH_B]"
 
@@ -291,6 +292,20 @@ def infer_closure_shape(source: str) -> Optional[ClosureShape]:
     return shapes[0] if len(shapes) == 1 else None
 
 
+def infer_cell_layout(semantics) -> Optional[Tuple[int, int]]:
+    layouts = {
+        (shape.open_table_key, shape.open_index_key)
+        for source in semantics.values()
+        for shape in [infer_closure_shape(source)]
+        if shape is not None
+    }
+    return next(iter(layouts)) if len(layouts) == 1 else None
+
+
+def current_cell_layout() -> Optional[Tuple[int, int]]:
+    return _CURRENT_CELL_LAYOUT
+
+
 def lift_closure(source: str, ins: Instruction, program: Program) -> Optional[str]:
     shape = infer_closure_shape(source)
     if shape is None:
@@ -349,15 +364,18 @@ def clean_statement(source, ins):
 
 
 def render_program(program, semantics):
-    global _CURRENT_PROGRAM
+    global _CURRENT_PROGRAM, _CURRENT_CELL_LAYOUT
     if _ORIGINAL_RENDER is None:
         raise luraph_decompiler.DecompileError("closure lifter renderer unavailable")
     previous = _CURRENT_PROGRAM
+    previous_layout = _CURRENT_CELL_LAYOUT
     _CURRENT_PROGRAM = program
+    _CURRENT_CELL_LAYOUT = infer_cell_layout(semantics)
     try:
         return _ORIGINAL_RENDER(program, semantics)
     finally:
         _CURRENT_PROGRAM = previous
+        _CURRENT_CELL_LAYOUT = previous_layout
 
 
 def install() -> None:

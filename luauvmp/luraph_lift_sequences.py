@@ -30,6 +30,20 @@ def _reg(ins, field: str) -> str:
     return luraph_lift.reg_expr(luraph_lift.field_value(ins, field))
 
 
+def _atom_pattern(prefix: str) -> str:
+    return (
+        r"(?:R\[@(?P<" + prefix + r"_reg>" + _FIELD + r")\]"
+        r"|@(?P<" + prefix + r"_value>" + _FIELD + r"))"
+    )
+
+
+def _matched_atom(match, prefix: str, ins) -> str:
+    reg_field = match.group(prefix + "_reg")
+    if reg_field is not None:
+        return _reg(ins, reg_field)
+    return _value(ins, match.group(prefix + "_value"))
+
+
 def _integral_slot(value):
     if isinstance(value, bool):
         return None
@@ -102,6 +116,111 @@ def clean_statement(source, ins):
         return (
             "R[%s](table.unpack(R, %s + 1, %s + %s - 1))"
             % (base, base, base, count)
+        )
+
+    match = re.fullmatch(
+        r"R\[@(?P<dst>" + _FIELD + r")\]=(?P<helper>bit32\."
+        r"(?:band|bor|bxor|lrotate|lshift|rrotate|rshift))\("
+        + _atom_pattern("left") + r"," + _atom_pattern("right") + r"\)",
+        text,
+    )
+    if match:
+        return "%s = %s(%s, %s)" % (
+            _reg(ins, match.group("dst")), match.group("helper"),
+            _matched_atom(match, "left", ins),
+            _matched_atom(match, "right", ins),
+        )
+
+    match = re.fullmatch(
+        r"R\[@(?P<dst>" + _FIELD + r")\]=table\.create\(@(?P<count>"
+        + _FIELD + r")\)",
+        text,
+    )
+    if match:
+        return "%s = table.create(%s)" % (
+            _reg(ins, match.group("dst")), _value(ins, match.group("count")),
+        )
+
+    # Recovery interns each proven nested helper literal once. Preserve exact
+    # dynamic writes and reads so later slots observe earlier VM mutations.
+    helper_text = text
+    for _ in range(3):
+        updated = re.sub(
+            r"\((__VMHELPER_\d+\[@" + _FIELD + r"\])\)", r"\1",
+            helper_text,
+        )
+        if updated == helper_text:
+            break
+        helper_text = updated
+    match = re.fullmatch(
+        r"(?P<table>__VMHELPER_\d+)\[@(?P<slot>" + _FIELD + r")\]="
+        r"R\[@(?P<src>" + _FIELD + r")\]",
+        helper_text,
+    )
+    if match:
+        return "%s[%s] = %s" % (
+            match.group("table"), _value(ins, match.group("slot")),
+            _reg(ins, match.group("src")),
+        )
+    match = re.fullmatch(
+        r"R\[@(?P<dst>" + _FIELD + r")\]=\(?"
+        r"(?P<table>__VMHELPER_\d+)\[@(?P<slot>" + _FIELD + r")\]\)?",
+        helper_text,
+    )
+    if match:
+        return "%s = %s[%s]" % (
+            _reg(ins, match.group("dst")), match.group("table"),
+            _value(ins, match.group("slot")),
+        )
+
+    # Public helper slots proven as table.move retain the standard five-argument
+    # signature. Require the complete scratch def-use chain before collapsing it.
+    match = re.fullmatch(
+        r"(?P<base>" + _ID + r")=@(?P<base_field>" + _FIELD + r");"
+        r"(?P<src>" + _ID + r")=@(?P<src_field>" + _FIELD + r");"
+        r"(?P<table>" + _ID + r")=R\[(?P=base)\];"
+        r"table\.move\(R,(?P=base)\+1,(?P<top>" + _ID + r"),"
+        r"(?P=src)\+1,(?P=table)\)",
+        text,
+    )
+    if match:
+        base = _value(ins, match.group("base_field"))
+        src = _value(ins, match.group("src_field"))
+        return "table.move(R, %s + 1, %s, %s + 1, R[%s])" % (
+            base, match.group("top"), src, base,
+        )
+
+    match = re.fullmatch(
+        r"(?P<base>" + _ID + r")=@(?P<base_field>" + _FIELD + r");"
+        r"(?P<src>" + _ID + r")=@(?P<src_field>" + _FIELD + r");"
+        r"(?P<table>" + _ID + r")=R\[(?P=base)\];"
+        r"table\.move\(R,(?P=base)\+1,(?P=base)\+@(?P<count_field>"
+        + _FIELD + r"),(?P=src)\+1,(?P=table)\)",
+        text,
+    )
+    if match:
+        base = _value(ins, match.group("base_field"))
+        src = _value(ins, match.group("src_field"))
+        count = _value(ins, match.group("count_field"))
+        return "table.move(R, %s + 1, %s + %s, %s + 1, R[%s])" % (
+            base, base, count, src, base,
+        )
+
+    match = re.fullmatch(
+        r"(?P<move>" + _ID + r")=\(?table\.move\)?;(?P<dst>" + _ID + r")=R;"
+        r"(?P<start>" + _ID + r")=(?P<base>" + _ID + r");"
+        r"(?P<one>" + _ID + r")=1;(?P=start)\+=(?P=one);"
+        r"(?P<finish>" + _ID + r")=(?P<top>" + _ID + r");"
+        r"(?P<source>" + _ID + r")=(?P<src>" + _ID + r");"
+        r"(?P<src_one>" + _ID + r")=1;(?P=source)\+=(?P=src_one);"
+        r"(?P<table>" + _ID + r")=(?P<value>" + _ID + r");"
+        r"(?P=move)\((?P=dst),(?P=start),(?P=finish),(?P=source),(?P=table)\)",
+        text,
+    )
+    if match:
+        return "table.move(R, %s + 1, %s, %s + 1, %s)" % (
+            match.group("base"), match.group("top"),
+            match.group("src"), match.group("value"),
         )
 
     # A randomized helper table has already been converted to an explicit pure
@@ -207,6 +326,58 @@ def clean_statement(source, ins):
             key, key, _reg(ins, match.group("src")),
         )
 
+    # The same raw cells appear with whole-rvalue/lvalue grouping and with
+    # constant operand atoms instead of register atoms in randomized layouts.
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=I\[@(?P<key>" + _FIELD + r")\];"
+        r"R\[@(?P<dst>" + _FIELD + r")\]=\(?(?P=tmp)\[2(?:\.0)?\]"
+        r"\[(?P=tmp)\[1(?:\.0)?\]\]\)?",
+        text,
+    )
+    if match:
+        key = _value(ins, match.group("key"))
+        return "%s = I[%s][2][I[%s][1]]" % (
+            _reg(ins, match.group("dst")), key, key,
+        )
+
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=I\[@(?P<key>" + _FIELD + r")\];"
+        r"R\[@(?P<dst>" + _FIELD + r")\]=\(?(?P=tmp)\[2(?:\.0)?\]"
+        r"\[(?P=tmp)\[1(?:\.0)?\]\]\[" + _atom_pattern("index") + r"\]\)?",
+        text,
+    )
+    if match:
+        key = _value(ins, match.group("key"))
+        return "%s = I[%s][2][I[%s][1]][%s]" % (
+            _reg(ins, match.group("dst")), key, key,
+            _matched_atom(match, "index", ins),
+        )
+
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=I\[@(?P<key>" + _FIELD + r")\];"
+        r"\(?(?P=tmp)\[2(?:\.0)?\]\[(?P=tmp)\[1(?:\.0)?\]\]\)?"
+        r"\[" + _atom_pattern("index") + r"\]=" + _atom_pattern("src"),
+        text,
+    )
+    if match:
+        key = _value(ins, match.group("key"))
+        return "I[%s][2][I[%s][1]][%s] = %s" % (
+            key, key, _matched_atom(match, "index", ins),
+            _matched_atom(match, "src", ins),
+        )
+
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=I\[@(?P<key>" + _FIELD + r")\];"
+        r"\(?(?P=tmp)\[2(?:\.0)?\]\)?\[(?P=tmp)\[1(?:\.0)?\]\]="
+        + _atom_pattern("src"),
+        text,
+    )
+    if match:
+        key = _value(ins, match.group("key"))
+        return "I[%s][2][I[%s][1]] = %s" % (
+            key, key, _matched_atom(match, "src", ins),
+        )
+
     # Direct captured-value table indexing. This is intentionally distinct from
     # raw-cell dereferencing above: the recovered semantic itself indexes I[key]
     # directly, so preserve that operation exactly.
@@ -232,6 +403,18 @@ def clean_statement(source, ins):
             _value(ins, match.group("key")),
             _reg(ins, match.group("index")),
             _reg(ins, match.group("src")),
+        )
+
+    match = re.fullmatch(
+        r"I\[@(?P<key>" + _FIELD + r")\]\[" + _atom_pattern("index")
+        + r"\]=" + _atom_pattern("src"),
+        text,
+    )
+    if match:
+        return "I[%s][%s] = %s" % (
+            _value(ins, match.group("key")),
+            _matched_atom(match, "index", ins),
+            _matched_atom(match, "src", ins),
         )
 
     # Exact persistent-scratch staging of the captured vector.  These operations

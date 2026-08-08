@@ -31,6 +31,7 @@ _SUPPORTED_HELPERS = {
     "bit32.rrotate", "bit32.rshift",
     "math.ceil", "math.floor", "math.modf", "math.pi",
     "string.byte", "string.len", "string.packsize", "string.unpack",
+    "table.create", "table.move",
 }
 _CANONICAL_FIELDS = {
     1: "P",
@@ -315,6 +316,59 @@ def _complete_nested_helpers(vm_source: str) -> Dict[int, Dict[int, str]]:
     return nested
 
 
+def _complete_direct_helpers(vm_source: str, helper_name: str) -> Dict[int, str]:
+    """Recover top-level pure helper slots assigned through VM aliases."""
+    direct_pattern = re.compile(
+        r"(?<![A-Za-z0-9_.])(?P<name>[A-Za-z_]\w*)\s*=\s*"
+        r"(?P<module>bit32|string|math|table)\.(?P<function>[A-Za-z_]\w*)"
+    )
+    module_pattern = re.compile(
+        r"(?<![A-Za-z0-9_.])(?P<name>[A-Za-z_]\w*)\s*=\s*"
+        r"(?P<module>bit32|string|math|table)(?!\s*\.)"
+    )
+    direct = {
+        match.group("name"): "%s.%s" % (
+            match.group("module"), match.group("function")
+        )
+        for match in direct_pattern.finditer(vm_source)
+    }
+    modules = {
+        match.group("name"): match.group("module")
+        for match in module_pattern.finditer(vm_source)
+    }
+    assignment = re.compile(
+        r"(?:\(\s*)?" + re.escape(helper_name) + r"(?:\s*\))?\s*"
+        r"\[\s*(?P<slot>" + _NUMBER_TEXT + r")\s*\]\s*=\s*\(?\s*"
+        r"(?:[A-Za-z_]\w*\.)?(?P<alias>[A-Za-z_]\w*)"
+        r"(?:\.(?P<function>[A-Za-z_]\w*))?\s*\)?",
+        re.S,
+    )
+    recovered: Dict[int, str] = {}
+    ambiguous = set()
+    for match in assignment.finditer(vm_source):
+        slot = _integer(match.group("slot"))
+        if slot is None or not 0 <= slot <= 255:
+            continue
+        alias = match.group("alias")
+        function = match.group("function")
+        if function is not None and alias in modules:
+            identity = "%s.%s" % (modules[alias], function)
+        elif function is None:
+            identity = direct.get(alias)
+        else:
+            identity = None
+        if identity not in _SUPPORTED_HELPERS:
+            continue
+        previous = recovered.get(slot)
+        if previous is not None and previous != identity:
+            ambiguous.add(slot)
+        else:
+            recovered[slot] = identity
+    for slot in ambiguous:
+        recovered.pop(slot, None)
+    return recovered
+
+
 def _replace_marker(source: str, key: str, value: str) -> str:
     pattern = re.compile(r"^--\s*LUAUVMP_" + re.escape(key) + r"=.*$", re.M)
     line = "-- LUAUVMP_%s=%s" % (key, value)
@@ -353,6 +407,13 @@ def _augment_public_factory(factory_path: Path) -> Dict[str, str]:
             source, "NESTED_HELPERS",
             json.dumps(encoded, separators=(",", ":"), sort_keys=True),
         )
+        helper_name = _metadata(source).get("HELPER_VAR")
+        if helper_name:
+            direct_helpers = _complete_direct_helpers(vm_source, helper_name)
+            source = _replace_marker(
+                source, "DIRECT_HELPERS",
+                json.dumps(direct_helpers, separators=(",", ":"), sort_keys=True),
+            )
     mapping = infer_canonical_variables(source)
     source = _replace_marker(
         source, "CANONICAL_VARS",
