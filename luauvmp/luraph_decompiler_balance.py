@@ -1,15 +1,10 @@
 """Keep generated Luau CFG dispatch below the compiler recursion limit.
 
 After sample-local semantic normalization, large public Luraph prototypes can
-contain thousands of recognized basic blocks.  ``luraph_decompiler`` historically
-rendered those blocks as one flat ``if/elseif pc == ...`` chain.  Luau represents
+contain thousands of recognized basic blocks. ``luraph_decompiler`` historically
+rendered those blocks as one flat ``if/elseif pc == ...`` chain. Luau represents
 that chain recursively and rejects sufficiently large prototypes before any code
 is executed.
-
-This layer is source-structural only.  It groups an already-generated flat PC
-dispatch into bounded inner chains and a small outer range dispatch.  Individual
-block bodies, conditions, fallthroughs, returns, metrics, and payload-execution
-policy are unchanged.
 """
 from __future__ import annotations
 
@@ -33,6 +28,7 @@ from . import (
     luraph_runtime_coroutine_identities,
     luraph_lift_generic_for_state,
     luraph_dispatch_known_opcode,
+    luraph_eval_string_unpack,
 )
 
 _CHUNK_SIZE = 64
@@ -143,12 +139,12 @@ def install() -> None:
     global _ORIGINAL_RENDER, _INSTALLED
     if _INSTALLED:
         return
+    # Install evaluator primitives before any dispatcher recovery wrapper runs.
+    luraph_eval_string_unpack.install()
     luraph_runtime_coroutine_identities.install()
     luraph_vararg_semantics.install()
     luraph_vararg_compact_fix.install()
     luraph_lift_generic_for_state.install()
-    # Outermost recovery wrapper: only a metadata-proven raw_L[raw_u] read is
-    # rewritten to the already-fetched raw_X value in a temporary factory copy.
     luraph_dispatch_known_opcode.install()
     luraph_lift_pairs.install()
     luraph_lift_chains.install()
