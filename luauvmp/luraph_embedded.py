@@ -1,7 +1,7 @@
 """Extract embedded Luau source chunks from a finalised Luraph prototype tree.
 
 Some protected programs contain already-authored Luau modules as large string
-constants and invoke them through ``loadstring`` at runtime.  Returning those
+constants and invoke them through ``loadstring`` at runtime. Returning those
 constants verbatim is both more accurate and more readable than structurally
 lifting the VM instructions that merely transport the string.
 """
@@ -24,6 +24,18 @@ _BOOTSTRAP_WORDS = {
     "Luraph", "loadstring", "debug", "getinfo", "getfenv", "setfenv",
     "coroutine", "traceback", "isyieldable", "error in error handling",
 }
+_KEYWORD_RE = re.compile(r"\b(?:local|function|if|for|while|return|end)\b")
+_MINIFIED_SYNTAX = (
+    re.compile(r"\blocal\s+[A-Za-z_][A-Za-z0-9_]*\s*="),
+    re.compile(r"\bfunction\b(?:\s+[A-Za-z_][A-Za-z0-9_:.]*)?\s*\("),
+    re.compile(r"\breturn\b"),
+    re.compile(r"\bend\b"),
+    re.compile(r"\b[A-Za-z_][A-Za-z0-9_.:]*\s*\("),
+)
+_MINIFIED_HIGH_SIGNAL = (
+    "loadstring", "getgenv", "hookmetamethod", "getrawmetatable",
+    "game:getservice", "task.", "spawn(",
+)
 
 
 def iter_string_operands(program: Program):
@@ -38,15 +50,30 @@ def iter_string_operands(program: Program):
 
 
 def source_score(value: str) -> int:
-    """Return a conservative source-likeness score for a decoded string."""
-    if len(value) < 512 or value.count("\n") < 3:
+    """Return a conservative source-likeness score for a decoded string.
+
+    Multi-line source is scored as before. Minified source is common in
+    loadstring payloads, so a long single-line chunk is also accepted when it
+    has several independent Luau lexical/syntax signals. Long opaque blobs with
+    a few accidental English keywords still fail closed.
+    """
+    if len(value) < 512:
         return 0
     lower = value.lower()
+    keywords = _KEYWORD_RE.findall(lower)
     score = sum(1 for word in _SOURCE_WORDS if word.lower() in lower)
-    score += min(
-        4,
-        len(re.findall(r"\b(?:local|function|if|for|while|return|end)\b", lower)) // 8,
-    )
+    score += min(4, len(keywords) // 8)
+
+    if value.count("\n") < 3:
+        syntax_kinds = sum(1 for pattern in _MINIFIED_SYNTAX if pattern.search(value))
+        high_signal = sum(1 for marker in _MINIFIED_HIGH_SIGNAL if marker in lower)
+        if score < 3:
+            return 0
+        if syntax_kinds < 2 and high_signal < 2:
+            return 0
+        if len(keywords) < 3 and high_signal < 1:
+            return 0
+        score += min(2, max(0, syntax_kinds - 1))
     return score
 
 
