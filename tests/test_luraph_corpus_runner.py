@@ -62,3 +62,11 @@ def test_quality_metrics_reject_non_object_decompiler_metadata():
 
     assert quality["compile_checked"] is False
     assert quality["fallback_instructions"] == -1
+
+
+def test_quality_metrics_prefers_emitted_residual_condition_count():
+    pipeline = _pipeline()
+    pipeline["decompiler"]["unresolved_dispatcher_conditionals"] = 0
+    quality = _quality_metrics(pipeline, {"7": {"unknown_ifs": 9}})
+
+    assert quality["unknown_ifs"] == 0

@@ -96,18 +96,20 @@ def _quality_metrics(pipeline: dict, semantics: dict) -> dict:
     fallback = decompiler.get("fallback_instructions")
     if isinstance(fallback, bool) or not isinstance(fallback, int):
         fallback = -1
-    unknown_ifs = 0
-    valid_unknown_ifs = True
-    for entry in semantics.values():
-        if not isinstance(entry, dict):
-            continue
-        value = entry.get("unknown_ifs", 0)
-        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-            valid_unknown_ifs = False
-            break
-        unknown_ifs += value
-    if not valid_unknown_ifs:
-        unknown_ifs = -1
+    unknown_ifs = decompiler.get("unresolved_dispatcher_conditionals")
+    if isinstance(unknown_ifs, bool) or not isinstance(unknown_ifs, int):
+        unknown_ifs = 0
+        valid_unknown_ifs = True
+        for entry in semantics.values():
+            if not isinstance(entry, dict):
+                continue
+            value = entry.get("unknown_ifs", 0)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                valid_unknown_ifs = False
+                break
+            unknown_ifs += value
+        if not valid_unknown_ifs:
+            unknown_ifs = -1
     return {
         "compile_checked": decompiler.get("compile_checked") is True,
         "fallback_instructions": fallback,

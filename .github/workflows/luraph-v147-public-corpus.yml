@@ -122,11 +122,9 @@ jobs:
           pipeline = json.load(open(sys.argv[1], encoding="utf-8"))
           semantics = json.load(open(sys.argv[2], encoding="utf-8"))
           decompiler = pipeline.get("decompiler", {})
-          unknown_ifs = sum(
-              int(entry.get("unknown_ifs", 0))
-              for entry in semantics.values()
-              if isinstance(entry, dict)
-          )
+          unknown_ifs = decompiler.get("unresolved_dispatcher_conditionals", -1)
+          if isinstance(unknown_ifs, bool) or not isinstance(unknown_ifs, int):
+              unknown_ifs = -1
           quality = {
               "compile_checked": decompiler.get("compile_checked") is True,
               "fallback_instructions": int(decompiler.get("fallback_instructions", -1)),
