@@ -64,6 +64,7 @@ def test_infers_two_stream_close_layout_with_outer_guard():
     assert shape.threshold == "j"
     assert (shape.self_key, shape.value_key, shape.selector_key) == (2, 3, 1)
     assert shape.selector_value == 3
+    assert close.resolved_if_count(source, _ins(e=4)) == 2
 
 
 def test_infers_legacy_two_stream_alternate_cell_layout():

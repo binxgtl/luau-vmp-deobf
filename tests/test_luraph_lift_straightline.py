@@ -15,6 +15,24 @@ def test_accepts_pure_library_function_table_constants_without_calls():
     assert straight.is_proven_straightline(source)
 
 
+def test_accepts_declared_collision_scratch_after_proven_dead_prefix():
+    source = "local Q=(188); l=(c); __s_I=p[u]; l=l[__s_I]; w=__s_B;"
+    assert straight.is_proven_straightline(source)
+
+
+def test_accepts_all_declared_randomized_scratch_spellings():
+    assert straight.is_proven_straightline("x=c; v=o[u];")
+    assert straight.is_proven_straightline(
+        "m=m[__s__]; __s__=H[u]; m=m[__s__]; x[v]=m;"
+    )
+    assert straight.is_proven_straightline("q=B[u]; __s__=__s__[q];")
+
+
+def test_keeps_live_literal_prefix_out_of_straightline_path():
+    source = "local Q=(188); l=Q;"
+    assert not straight.is_proven_straightline(source)
+
+
 def test_rejects_control_flow_and_calls():
     assert not straight.is_proven_straightline("if n then M=h; end")
     assert not straight.is_proven_straightline("for A=1,3 do M[A]=A; end")
@@ -24,7 +42,7 @@ def test_rejects_control_flow_and_calls():
 
 
 def test_rejects_environment_upvalue_and_vararg_state():
-    assert not straight.is_proven_straightline("c[H[u]]=q[E[u]];")
+    assert not straight.is_proven_straightline("c[H[u]]=__ENV[E[u]];")
     assert not straight.is_proven_straightline("M=I[H[u]];")
     # Only the exact canonical operand read B[u] is admitted. Arbitrary indexed
     # B state remains fail-closed and cannot be confused with the operand column.

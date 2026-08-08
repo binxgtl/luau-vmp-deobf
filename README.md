@@ -119,6 +119,12 @@ recovered/
    super-instructions remain quoted as `__semantic_fallback` data; compile
    success alone does not prove behavioral equivalence.
 
+For a fail-closed fully-devirtualized result, require all three decompiler
+metrics in `pipeline.json`: `compile_checked: true`, `fallback_instructions: 0`,
+and `unresolved_dispatcher_conditionals: 0`. The public v14.7 corpus workflow
+enforces the same gate while also requiring both payload-execution flags to be
+`false`.
+
 Not every protected program embeds source strings. Bytecode-only programs can
 only produce pseudo/structural output, and compilation cannot recover original
 names, comments or formatting.

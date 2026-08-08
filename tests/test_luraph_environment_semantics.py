@@ -76,6 +76,13 @@ def test_lifts_proven_environment_scratch_chain_without_dropping_state():
     assert lifted == 'n = __env\nW = "print"\nn = n[W]'
 
 
+def test_lifts_split_environment_scratch_staging():
+    ins = _instruction()
+    assert env.clean_environment_statement(
+        'x=c; v=E[u]; m=__ENV;', ins
+    ) == 'x = R; v = "print"; m = __env'
+
+
 def test_environment_scratch_chain_rejects_unknown_locals():
     ins = _instruction()
     assert env.clean_environment_statement(

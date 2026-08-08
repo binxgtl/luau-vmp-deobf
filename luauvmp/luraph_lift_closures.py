@@ -16,6 +16,7 @@ from typing import List, Optional, Tuple
 import re
 
 from . import luraph_decompiler, luraph_lift
+from . import luraph_public_v147 as public
 from .luraph_full import Instruction, Program, ProtoRef
 from .luraph_upvalue_descriptors import DescriptorError, decode_descriptors
 
@@ -24,6 +25,7 @@ _INSTALLED = False
 _ORIGINAL_CLEAN = None
 _ORIGINAL_RENDER = None
 _CURRENT_PROGRAM: Optional[Program] = None
+_CURRENT_CELL_LAYOUT: Optional[Tuple[int, int]] = None
 _ID = r"[A-Za-z_]\w*"
 _FIELD = r"[EpoH_B]"
 
@@ -35,6 +37,9 @@ class ClosureShape:
     descriptor_field: int
     mode_key: int
     register_key: int
+    captures_name: str
+    mode_name: str
+    cell_name: str
     cache_name: str
     open_table_key: int
     open_index_key: int
@@ -208,7 +213,7 @@ def _candidate_shapes(source: str) -> List[ClosureShape]:
             continue
         _mode_name, mode_key, register_name, register_key = role_candidates[0]
 
-        cell_candidates: List[Tuple[str, int, int]] = []
+        cell_candidates: List[Tuple[str, str, int, int]] = []
         for cached in re.finditer(
             r"\b(?P<cell>" + _ID + r")\s*=\s*\(?\s*"
             r"(?P<cache>" + _ID + r")\s*\[\s*"
@@ -252,10 +257,10 @@ def _candidate_shapes(source: str) -> List[ClosureShape]:
                 or table_value == index_value
             ):
                 continue
-            cell_candidates.append((cache, table_value, index_value))
+            cell_candidates.append((cache, cell, table_value, index_value))
         if len(cell_candidates) != 1:
             continue
-        cache, open_table_key, open_index_key = cell_candidates[0]
+        cache, cell_name, open_table_key, open_index_key = cell_candidates[0]
 
         # Every loop arm must write the same zero-based capture slot. Parentheses
         # around the already-proven capture-vector identifier are cosmetic Luau
@@ -275,6 +280,9 @@ def _candidate_shapes(source: str) -> List[ClosureShape]:
                 descriptor_field=descriptor_field,
                 mode_key=mode_key,
                 register_key=register_key,
+                captures_name=caps,
+                mode_name=_mode_name,
+                cell_name=cell_name,
                 cache_name=cache,
                 open_table_key=open_table_key,
                 open_index_key=open_index_key,
@@ -289,6 +297,141 @@ def _candidate_shapes(source: str) -> List[ClosureShape]:
 def infer_closure_shape(source: str) -> Optional[ClosureShape]:
     shapes = _candidate_shapes(source)
     return shapes[0] if len(shapes) == 1 else None
+
+
+def infer_cell_layout(semantics) -> Optional[Tuple[int, int]]:
+    layouts = {
+        (shape.open_table_key, shape.open_index_key)
+        for source in semantics.values()
+        for shape in [infer_closure_shape(source)]
+        if shape is not None
+    }
+    return next(iter(layouts)) if len(layouts) == 1 else None
+
+
+def current_cell_layout() -> Optional[Tuple[int, int]]:
+    return _CURRENT_CELL_LAYOUT
+
+
+def _if_count(source: str) -> int:
+    return sum(
+        1 for token in public._tokens(source)
+        if token.kind == "identifier" and token.value == "if"
+    )
+
+
+def _static_false_regions(source: str):
+    """Return exact numeric-constant guard regions proven never executable."""
+    from .luraph_lift_close_upvalues import _block_end
+
+    assignment = re.compile(
+        r"(?:\blocal\s+)?(?P<name>" + _ID + r")\s*=\s*\(?\s*"
+        r"(?P<value>-?\d+(?:\.\d+)?)\s*\)?\s*;"
+    )
+    constants = {}
+    ambiguous = set()
+    for match in assignment.finditer(source):
+        name = match.group("name")
+        value = float(match.group("value"))
+        previous = constants.get(name)
+        if previous is not None and previous[0] != value:
+            ambiguous.add(name)
+        elif previous is None:
+            constants[name] = (value, match.end())
+    for name in ambiguous:
+        constants.pop(name, None)
+
+    guard = re.compile(
+        r"\bif\s+(?P<name>" + _ID + r")\s*(?P<operator>==|~=)\s*"
+        r"(?P<value>-?\d+(?:\.\d+)?)\s+then\b"
+    )
+    regions = []
+    for match in guard.finditer(source):
+        fact = constants.get(match.group("name"))
+        if fact is None or fact[1] > match.start():
+            continue
+        value = float(match.group("value"))
+        condition = fact[0] == value
+        if match.group("operator") == "~=":
+            condition = not condition
+        if condition:
+            continue
+        between = source[fact[1]:match.start()]
+        if re.search(
+            r"\b" + re.escape(match.group("name"))
+            + r"\s*(?:\+=|-=|\*=|/=|%=|\^=|(?<![<>=~])=(?!=))",
+            between,
+        ):
+            continue
+        end = _block_end(source, match.start())
+        if end is not None:
+            regions.append((match.start(), end))
+    # Nested static guards are already covered by their outer region.
+    result = []
+    for start, end in sorted(regions):
+        if result and start < result[-1][1]:
+            continue
+        result.append((start, end))
+    return result
+
+
+def _closure_condition_count(source: str, shape: ClosureShape) -> int:
+    """Count only closure branches with explicit role or dead-guard proof."""
+    regions = _static_false_regions(source)
+    dead_count = sum(_if_count(source[start:end]) for start, end in regions)
+    chars = list(source)
+    for start, end in regions:
+        chars[start:end] = " " * (end - start)
+    remaining = "".join(chars)
+
+    headers = re.findall(
+        r"\b(?:if|elseif)\s+(?P<condition>.*?)\s+then\b",
+        remaining,
+        re.S,
+    )
+    categories = []
+    atoms = {
+        shape.captures_name: "captures",
+        shape.cache_name: "cache",
+        shape.cell_name: "cell",
+    }
+    for condition in headers:
+        compact = re.sub(r"\s+", "", condition)
+        for _ in range(4):
+            updated = re.sub(r"^not\((.*)\)$", r"\1", compact)
+            updated = re.sub(r"^\((.*)\)$", r"\1", updated)
+            updated = re.sub(r"^not(?=[A-Za-z_])", "", updated)
+            if updated == compact:
+                break
+            compact = updated
+        if compact in atoms:
+            categories.append(atoms[compact])
+            continue
+        match = re.fullmatch(
+            re.escape(shape.mode_name) + r"==(?P<mode>[01])(?:\.0)?",
+            compact,
+        )
+        if match is not None:
+            categories.append("mode" + match.group("mode"))
+            continue
+        return 0
+
+    required = {"captures", "mode0", "mode1", "cell"}
+    if not required.issubset(categories):
+        return 0
+    if any(categories.count(name) != 1 for name in required):
+        return 0
+    if categories.count("cache") > 1 or len(categories) not in (4, 5):
+        return 0
+    return dead_count + _if_count(remaining)
+
+
+def resolved_if_count(source: str, ins: Instruction, program: Program) -> int:
+    """Return the independently proven closure-conditional count."""
+    shape = infer_closure_shape(source)
+    if shape is None or lift_closure(source, ins, program) is None:
+        return 0
+    return _closure_condition_count(source, shape)
 
 
 def lift_closure(source: str, ins: Instruction, program: Program) -> Optional[str]:
@@ -349,15 +492,18 @@ def clean_statement(source, ins):
 
 
 def render_program(program, semantics):
-    global _CURRENT_PROGRAM
+    global _CURRENT_PROGRAM, _CURRENT_CELL_LAYOUT
     if _ORIGINAL_RENDER is None:
         raise luraph_decompiler.DecompileError("closure lifter renderer unavailable")
     previous = _CURRENT_PROGRAM
+    previous_layout = _CURRENT_CELL_LAYOUT
     _CURRENT_PROGRAM = program
+    _CURRENT_CELL_LAYOUT = infer_cell_layout(semantics)
     try:
         return _ORIGINAL_RENDER(program, semantics)
     finally:
         _CURRENT_PROGRAM = previous
+        _CURRENT_CELL_LAYOUT = previous_layout
 
 
 def install() -> None:

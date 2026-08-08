@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from . import luraph_lift
+from . import luraph_lift, luraph_lift_closures
 from .luraph_lift_return_prefix import install as _install_return_prefix
 from .luraph_lift_runtime_builtins import install as _install_runtime_builtins
 from .luraph_lift_residual_simple import install as _install_residual_simple
@@ -27,6 +27,28 @@ def _value(ins, field: str) -> str:
 
 def _reg(ins, field: str) -> str:
     return luraph_lift.reg_expr(luraph_lift.field_value(ins, field))
+
+
+def clean_layout_statement(source, ins, layout):
+    if layout is None:
+        return None
+    table_key, index_key = layout
+    if table_key == index_key:
+        return None
+    text = luraph_lift.compact(source).rstrip(";")
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=I\[@(?P<key>" + _FIELD + r")\];"
+        r"R\[@(?P<dst>" + _FIELD + r")\]=\(?(?P=tmp)\["
+        + str(table_key) + r"(?:\.0)?\]\[(?P=tmp)\[" + str(index_key)
+        + r"(?:\.0)?\]\]\)?",
+        text,
+    )
+    if match:
+        key = _value(ins, match.group("key"))
+        return "%s = I[%s][%d][I[%s][%d]]" % (
+            _reg(ins, match.group("dst")), key, table_key, key, index_key,
+        )
+    return None
 
 
 def clean_statement(source, ins):
@@ -47,7 +69,9 @@ def clean_statement(source, ins):
             _reg(ins, match.group("dst")), key, key,
             _reg(ins, match.group("index")),
         )
-    return None
+    return clean_layout_statement(
+        source, ins, luraph_lift_closures.current_cell_layout()
+    )
 
 
 def install() -> None:

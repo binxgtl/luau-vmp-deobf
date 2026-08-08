@@ -58,3 +58,17 @@ l[52][14]=m.X;
     assert nested[52][13] == 'bit32.countlz'
     assert nested[52][14] == 'bit32.rrotate'
     assert nested[52][15] == 'string.unpack'
+
+
+def test_recovers_direct_pure_helpers_through_vm_aliases():
+    source = '''
+        n=table.create; u=table; U=bit32;
+        (S)[20]=G.n;
+        S[29]=(y.u.move);
+        S[13]=(G.U.bxor);
+        S[15556]=(G.U.lrotate);
+        other[13]=G.U.band;
+    '''
+    assert normalize._complete_direct_helpers(source, "S") == {
+        13: "bit32.bxor", 20: "table.create", 29: "table.move",
+    }

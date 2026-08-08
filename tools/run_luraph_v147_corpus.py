@@ -88,6 +88,51 @@ def _source_probe(sample: Path) -> dict:
     }
 
 
+def _quality_metrics(pipeline: dict, semantics: dict) -> dict:
+    """Return the fail-closed fully-devirtualized corpus metrics."""
+    decompiler = pipeline.get("decompiler", {})
+    if not isinstance(decompiler, dict):
+        decompiler = {}
+    fallback = decompiler.get("fallback_instructions")
+    if isinstance(fallback, bool) or not isinstance(fallback, int):
+        fallback = -1
+    unknown_ifs = decompiler.get("unresolved_dispatcher_conditionals")
+    if isinstance(unknown_ifs, bool) or not isinstance(unknown_ifs, int):
+        unknown_ifs = 0
+        valid_unknown_ifs = True
+        for entry in semantics.values():
+            if not isinstance(entry, dict):
+                continue
+            value = entry.get("unknown_ifs", 0)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                valid_unknown_ifs = False
+                break
+            unknown_ifs += value
+        if not valid_unknown_ifs:
+            unknown_ifs = -1
+    return {
+        "compile_checked": decompiler.get("compile_checked") is True,
+        "fallback_instructions": fallback,
+        "unknown_ifs": unknown_ifs,
+        "payload_executed": pipeline.get("payload_executed"),
+        "final_payload_executed": pipeline.get("final_payload_executed"),
+    }
+
+
+def _quality_error(quality: dict) -> Optional[str]:
+    if not quality["compile_checked"]:
+        return "structural source was not compile checked"
+    if quality["fallback_instructions"] != 0:
+        return "semantic fallback instructions remain"
+    if quality["unknown_ifs"] != 0:
+        return "unresolved dispatcher conditionals remain"
+    if quality["payload_executed"] is not False:
+        return "payload execution safety flag is missing or true"
+    if quality["final_payload_executed"] is not False:
+        return "final payload execution safety flag is missing or true"
+    return None
+
+
 def _stop_process(process: subprocess.Popen[bytes]) -> bytes:
     """Stop the CLI and every Lune child while preserving buffered output."""
     if process.poll() is None:
@@ -166,7 +211,14 @@ def run_sample(sample: Path, output_root: Path, timeout: int) -> dict:
             record["source_probe"] = _source_probe(sample)
         return record
 
-    pipeline = json.loads(pipeline_path.read_text(encoding="utf-8"))
+    try:
+        pipeline = json.loads(pipeline_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        record["error"] = "invalid pipeline JSON: %s" % exc
+        return record
+    if not isinstance(pipeline, dict):
+        record["error"] = "pipeline JSON is not an object"
+        return record
     decompiled = output / "program.decompiled.luau"
     pseudo = output / "program.pseudo.lua"
     semantics = output / "artifacts" / "opcode_semantics.json"
@@ -184,11 +236,22 @@ def run_sample(sample: Path, output_root: Path, timeout: int) -> dict:
     if missing:
         record["error"] = "missing generated artifacts"
         return record
-    if not record["compile_checked"]:
-        record["error"] = "structural source was not compile checked"
+    try:
+        semantic_entries = json.loads(semantics.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        record["error"] = "invalid opcode semantics JSON: %s" % exc
+        return record
+    if not isinstance(semantic_entries, dict):
+        record["error"] = "opcode semantics JSON is not an object"
         return record
     if not isinstance(record["opcode_slots"], int) or record["opcode_slots"] <= 0:
         record["error"] = "dispatcher semantics were not recovered"
+        return record
+    quality = _quality_metrics(pipeline, semantic_entries)
+    record.update(quality)
+    quality_error = _quality_error(quality)
+    if quality_error is not None:
+        record["error"] = quality_error
         return record
     record["decompiled_bytes"] = decompiled.stat().st_size
     record["pseudo_bytes"] = pseudo.stat().st_size

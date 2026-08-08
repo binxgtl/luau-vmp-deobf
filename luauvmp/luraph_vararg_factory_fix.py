@@ -18,7 +18,7 @@ def infer_factory_varargs(factory_source: str, helper: str,
     if not helper:
         return None
     pattern = re.compile(
-        r"\blocal\s+(?P<count>" + _ID + r")\s*,\s*(?P<table>" + _ID
+        r"\b(?:local\s+)?(?P<count>" + _ID + r")\s*,\s*(?P<table>" + _ID
         + r")\s*=\s*(?:\(\s*" + re.escape(helper) + r"\s*\)|"
         + re.escape(helper) + r")\s*\[\s*(?P<slot>" + _NUMBER
         + r")\s*\]\s*\(\s*\.\.\.\s*\)",

@@ -209,3 +209,17 @@ def test_cli_deobf_rejects_luraph(monkeypatch):
     with pytest.raises(SystemExit) as exc:
         cli.cmd_deobf(type('A', (), {'input': 'x.lua', 'output': None})())
     assert 'Luraph' in str(exc.value)
+
+
+def test_cli_luraph_creates_output_parent(tmp_path, monkeypatch):
+    from luauvmp import cli
+
+    monkeypatch.setattr(cli, 'read_source', lambda _path: 'luraph fixture')
+    monkeypatch.setattr(cli.luraph, 'detect', lambda _source: True)
+    monkeypatch.setattr(cli.luraph, 'unpack', lambda _source: (b'vm', b'bytecode'))
+    output = tmp_path / 'nested' / 'stage1'
+
+    cli.cmd_luraph(type('A', (), {'input': 'sample.lua', 'output': str(output)})())
+
+    assert output.with_suffix('.vm.lua').read_bytes() == b'vm'
+    assert output.with_suffix('.bytecode.bin').read_bytes() == b'bytecode'

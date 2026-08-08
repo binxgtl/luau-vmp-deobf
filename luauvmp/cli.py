@@ -159,6 +159,8 @@ def cmd_luraph(args):
         raise SystemExit('no Luraph v14.x loader detected in %s' % args.input)
     vm, bytecode = luraph.unpack(src)
     base = args.output or os.path.splitext(args.input)[0]
+    parent = os.path.dirname(os.path.abspath(base))
+    os.makedirs(parent, exist_ok=True)
     with open(base + '.vm.lua', 'wb') as fh:
         fh.write(vm)
     with open(base + '.bytecode.bin', 'wb') as fh:

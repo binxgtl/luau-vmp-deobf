@@ -37,7 +37,7 @@ _STRUCTURAL_TARGETS = {"A", "I", "E", "p", "o", "H", "_", "B", "L", "X", "c", "u
 _SCRATCH_NAMES = {
     "M", "V", "h", "r", "z", "Y", "W", "n", "T", "S", "N", "g",
     "K", "C", "Z", "e", "m", "O", "U", "F", "J", "d", "b", "y",
-    "t", "a", "i", "w", "l", "Q", "G",
+    "t", "a", "i", "w", "l", "Q", "G", "k", "x", "v", "q",
     "__s_A", "__s_I", "__s_E", "__s_p", "__s_o", "__s_H", "__s__",
     "__s_B", "__s_L", "__s_X", "__s_c", "__s_u", "__s_R",
 }
@@ -299,6 +299,24 @@ def clean_environment_statement(source, ins):
             "%s = %s" % (keyvar, key),
             "%s = %s[%s]" % (table, table, keyvar),
         ])
+
+    match = re.fullmatch(
+        r"(?P<table>[A-Za-z_]\w*)=R;"
+        r"(?P<keyvar>[A-Za-z_]\w*)=@(?P<field>[EpoH_B]);"
+        r"(?P<envvar>[A-Za-z_]\w*)=__ENV",
+        text,
+    )
+    if match:
+        names = {match.group("table"), match.group("keyvar"), match.group("envvar")}
+        if not names.issubset(_SCRATCH_NAMES):
+            return None
+        key = luraph_lift.value_expr(
+            luraph_lift.field_value(ins, match.group("field"))
+        )
+        return "%s = R; %s = %s; %s = __env" % (
+            match.group("table"), match.group("keyvar"), key,
+            match.group("envvar"),
+        )
     return None
 
 

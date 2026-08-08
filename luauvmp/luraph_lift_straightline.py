@@ -17,6 +17,7 @@ import re
 
 from . import luraph_decompiler
 from .luraph_full import substitute_prepared
+from .luraph_lift_dead_prefix import strip_dead_literal_prefix
 
 
 _INSTALLED = False
@@ -27,7 +28,10 @@ _ORIGINAL_DECOMPILE = None
 _SCRATCH = {
     "M", "V", "h", "r", "o", "L", "z", "Y", "W", "n", "T", "S",
     "N", "g", "K", "C", "Z", "e", "m", "O", "U", "F", "J", "d",
-    "b", "H", "X", "y", "t", "a", "i", "R", "c", "u",
+    "b", "H", "X", "y", "t", "a", "i", "R", "c", "u", "w", "l",
+    "k", "x", "v", "q",
+    "Q", "G", "__s_A", "__s_I", "__s_E", "__s_p", "__s_o", "__s_H",
+    "__s_", "__s__", "__s_B", "__s_L", "__s_X", "__s_c", "__s_u", "__s_R",
 }
 _OPERANDS = {"E", "p", "o", "H", "_"}
 _SAFE_GLOBALS = {
@@ -35,7 +39,7 @@ _SAFE_GLOBALS = {
     "rshift", "lrotate", "bor", "countrz", "bxor", "band", "bnot",
     "lshift", "countlz", "rrotate", "unpack",
 }
-_FORBIDDEN_NAMES = {"A", "B", "I", "P", "q", "j", "game", "workspace", "require"}
+_FORBIDDEN_NAMES = {"A", "B", "I", "P", "j", "game", "workspace", "require"}
 _FORBIDDEN_KEYWORDS = re.compile(
     r"\b(?:if|then|else|elseif|for|while|repeat|until|function|return|break|continue|local|do|end)\b"
 )
@@ -46,6 +50,7 @@ _CANONICAL_B_OPERAND = re.compile(r"\bB\s*\[\s*u\s*\]")
 
 def is_proven_straightline(source: str) -> bool:
     """Whether ``source`` is an exact side-effect-bounded scratch micro-op."""
+    source = strip_dead_literal_prefix(source)
     if not source.strip() or _FORBIDDEN_KEYWORDS.search(source):
         return False
 
@@ -78,6 +83,7 @@ def is_proven_straightline(source: str) -> bool:
 def _executable_raw(ins, prepared) -> str:
     """Substitute the recovered semantic before fallback-safety quoting."""
     _name, semantic = prepared[ins.opcode]
+    semantic = strip_dead_literal_prefix(semantic)
     return _DEAD_W_PREFIX.sub("", substitute_prepared(semantic, ins), count=1)
 
 
