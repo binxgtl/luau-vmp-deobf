@@ -32,6 +32,9 @@ _MINIFIED_SYNTAX = (
     re.compile(r"\bend\b"),
     re.compile(r"\b[A-Za-z_][A-Za-z0-9_.:]*\s*\("),
 )
+_MINIFIED_STRUCTURAL = (
+    _MINIFIED_SYNTAX[0], _MINIFIED_SYNTAX[1], _MINIFIED_SYNTAX[4],
+)
 _MINIFIED_HIGH_SIGNAL = (
     "loadstring", "getgenv", "hookmetamethod", "getrawmetatable",
     "game:getservice", "task.", "spawn(",
@@ -66,8 +69,13 @@ def source_score(value: str) -> int:
 
     if value.count("\n") < 3:
         syntax_kinds = sum(1 for pattern in _MINIFIED_SYNTAX if pattern.search(value))
+        structural_kinds = sum(
+            1 for pattern in _MINIFIED_STRUCTURAL if pattern.search(value)
+        )
         high_signal = sum(1 for marker in _MINIFIED_HIGH_SIGNAL if marker in lower)
         if score < 3:
+            return 0
+        if structural_kinds < 1:
             return 0
         if syntax_kinds < 2 and high_signal < 2:
             return 0
