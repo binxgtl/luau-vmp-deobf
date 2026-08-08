@@ -7,6 +7,7 @@ sys.path.insert(0, str(ROOT))
 from luauvmp.luraph_embedded import (
     find_embedded_sources,
     looks_like_luraph_bootstrap,
+    source_score,
     write_embedded_sources,
 )
 from luauvmp.luraph_full import Instruction, Program, Proto
@@ -36,6 +37,32 @@ def test_embedded_source_extraction_writes_exact_largest_chunk(tmp_path):
     assert manifest['source_chunks'] == 1
     assert (tmp_path / 'embedded_main.luau').read_text() == source
     assert (tmp_path / manifest['chunks'][0]['file']).read_text() == source
+
+
+def test_minified_embedded_source_is_not_rejected_for_missing_newlines(tmp_path):
+    statement = (
+        'local game=game;local function run()return '
+        'game:GetService("Players") end;run();'
+    )
+    source = statement * 20
+    assert '\n' not in source
+    assert len(source) >= 512
+    assert source_score(source) >= 3
+
+    program = make_program(['noise', source])
+    found = find_embedded_sources(program)
+    assert len(found) == 1
+    manifest = write_embedded_sources(program, tmp_path)
+    assert manifest['source_chunks'] == 1
+    assert (tmp_path / 'embedded_main.luau').read_text() == source
+
+
+def test_minified_keyword_noise_still_fails_closed():
+    noise = ('local function return end ' + ('A' * 64)) * 12
+    assert len(noise) >= 512
+    assert '\n' not in noise
+    assert source_score(noise) == 0
+    assert find_embedded_sources(make_program([noise])) == []
 
 
 def test_bootstrap_detector_requires_runtime_strings_and_no_source():
