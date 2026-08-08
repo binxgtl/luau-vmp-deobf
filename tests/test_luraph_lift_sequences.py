@@ -144,11 +144,11 @@ def test_lifts_proven_direct_helpers_and_table_move_shapes():
     assert luraph_lift.clean_statement(
         'x=B[u]; v=o[u]; m=c[x]; table.move(c,x+1,r,v+1,m);',
         ins(b=3, o=7),
-    ) == 'table.move(R, 3 + 1, r, 7 + 1, R[3])'
+    ) == 'x = 3\nv = 7\nm = R[x]\ntable.move(R, x + 1, r, v + 1, m)'
     assert luraph_lift.clean_statement(
         'x=E[u]; v=o[u]; m=c[x]; table.move(c,x+1,x+B[u],v+1,m);',
         ins(e=3, o=7, b=5),
-    ) == 'table.move(R, 3 + 1, 3 + 5, 7 + 1, R[3])'
+    ) == 'x = 3\nv = 7\nm = R[x]\ntable.move(R, x + 1, x + 5, v + 1, m)'
 
 
 def test_lifts_shared_nested_helper_write_and_read():
@@ -166,9 +166,11 @@ def test_lifts_persistent_table_move_scratch_call():
         __s_c=v; s=1; __s_c+=s; s=m;
         __s__(q,Z,M,__s_c,s);
     '''
-    assert luraph_lift.clean_statement(source, ins()) == (
-        'table.move(R, x + 1, r, v + 1, m)'
-    )
+    assert luraph_lift.clean_statement(source, ins()) == '\n'.join([
+        '__s__ = table.move', 'q = R', 'Z = x', 'M = 1', 'Z += M',
+        'M = r', '__s_c = v', 's = 1', '__s_c += s', 's = m',
+        '__s__(q, Z, M, __s_c, s)',
+    ])
 
 
 def test_lifts_direct_capture_value_indexing():

@@ -174,7 +174,8 @@ def clean_statement(source, ins):
         )
 
     # Public helper slots proven as table.move retain the standard five-argument
-    # signature. Require the complete scratch def-use chain before collapsing it.
+    # signature. Preserve every persistent scratch assignment in the exact
+    # def-use chain; later virtual instructions can observe these locals.
     match = re.fullmatch(
         r"(?P<base>" + _ID + r")=@(?P<base_field>" + _FIELD + r");"
         r"(?P<src>" + _ID + r")=@(?P<src_field>" + _FIELD + r");"
@@ -184,11 +185,17 @@ def clean_statement(source, ins):
         text,
     )
     if match:
-        base = _value(ins, match.group("base_field"))
-        src = _value(ins, match.group("src_field"))
-        return "table.move(R, %s + 1, %s, %s + 1, R[%s])" % (
-            base, match.group("top"), src, base,
-        )
+        base = match.group("base")
+        src = match.group("src")
+        table = match.group("table")
+        return "\n".join([
+            "%s = %s" % (base, _value(ins, match.group("base_field"))),
+            "%s = %s" % (src, _value(ins, match.group("src_field"))),
+            "%s = R[%s]" % (table, base),
+            "table.move(R, %s + 1, %s, %s + 1, %s)" % (
+                base, match.group("top"), src, table,
+            ),
+        ])
 
     match = re.fullmatch(
         r"(?P<base>" + _ID + r")=@(?P<base_field>" + _FIELD + r");"
@@ -199,12 +206,18 @@ def clean_statement(source, ins):
         text,
     )
     if match:
-        base = _value(ins, match.group("base_field"))
-        src = _value(ins, match.group("src_field"))
+        base = match.group("base")
+        src = match.group("src")
+        table = match.group("table")
         count = _value(ins, match.group("count_field"))
-        return "table.move(R, %s + 1, %s + %s, %s + 1, R[%s])" % (
-            base, base, count, src, base,
-        )
+        return "\n".join([
+            "%s = %s" % (base, _value(ins, match.group("base_field"))),
+            "%s = %s" % (src, _value(ins, match.group("src_field"))),
+            "%s = R[%s]" % (table, base),
+            "table.move(R, %s + 1, %s + %s, %s + 1, %s)" % (
+                base, base, count, src, table,
+            ),
+        ])
 
     match = re.fullmatch(
         r"(?P<move>" + _ID + r")=\(?table\.move\)?;(?P<dst>" + _ID + r")=R;"
@@ -218,10 +231,22 @@ def clean_statement(source, ins):
         text,
     )
     if match:
-        return "table.move(R, %s + 1, %s, %s + 1, %s)" % (
-            match.group("base"), match.group("top"),
-            match.group("src"), match.group("value"),
-        )
+        return "\n".join([
+            "%s = table.move" % match.group("move"),
+            "%s = R" % match.group("dst"),
+            "%s = %s" % (match.group("start"), match.group("base")),
+            "%s = 1" % match.group("one"),
+            "%s += %s" % (match.group("start"), match.group("one")),
+            "%s = %s" % (match.group("finish"), match.group("top")),
+            "%s = %s" % (match.group("source"), match.group("src")),
+            "%s = 1" % match.group("src_one"),
+            "%s += %s" % (match.group("source"), match.group("src_one")),
+            "%s = %s" % (match.group("table"), match.group("value")),
+            "%s(%s, %s, %s, %s, %s)" % (
+                match.group("move"), match.group("dst"), match.group("start"),
+                match.group("finish"), match.group("source"), match.group("table"),
+            ),
+        ])
 
     # A randomized helper table has already been converted to an explicit pure
     # Luau literal by luraph_nested_helper_literals. Select its exact entry using
