@@ -1,4 +1,6 @@
+from luauvmp import luraph_decompiler
 from luauvmp import luraph_reachability as reachability
+from luauvmp.luraph_dispatch import SemanticMap, load_semantics
 from luauvmp.luraph_full import Instruction, Program, Proto, ProtoRef
 
 
@@ -66,6 +68,58 @@ def test_unknown_branch_target_disables_block_pruning():
     pruned, removed = reachability.prune_program(captured, semantics)
     assert [item.pc for item in pruned.protos[0].instructions] == [1, 2, 3]
     assert removed == 0
+
+
+def test_noncanonical_pc_write_disables_block_pruning():
+    captured = program([
+        instruction(1, 1),
+        instruction(2, 2, e=4),
+        instruction(3, 3),
+        instruction(4, 3),
+    ])
+    semantics = {
+        1: "u=tmp",
+        2: "u=E[u]",
+        3: "c[p[u]]=E[u]",
+    }
+    pruned, removed = reachability.prune_program(captured, semantics)
+    assert [item.pc for item in pruned.protos[0].instructions] == [1, 2, 3, 4]
+    assert removed == 0
+
+
+def test_pc_write_detection_is_conservative_and_masks_noncode():
+    assert reachability.has_residual_pc_write("u+=1", None)
+    assert reachability.has_residual_pc_write("x,u=1,tmp", None)
+    assert not reachability.has_residual_pc_write(
+        'local text="u=tmp"; -- u+=1\nc[p[u]]=E[u]', None
+    )
+
+
+def test_unresolved_condition_metric_is_independent_from_fallback_count():
+    captured = program([instruction(1, 3, p=0, e=7)])
+    semantics = SemanticMap(
+        {3: "c[p[u]]=E[u]"},
+        {3: 1},
+    )
+    _source, metrics = luraph_decompiler.render_program(captured, semantics)
+    assert metrics["fallback_instructions"] == 0
+    assert metrics["reachable_dispatcher_conditionals"] == 1
+    assert metrics["resolved_dispatcher_conditionals"] == 0
+    assert metrics["unresolved_dispatcher_conditionals"] == 1
+    assert reachability.unresolved_conditionals(
+        captured, {3: "c[p[u]]=E[u]"}
+    ) == -1
+
+
+def test_semantics_loader_preserves_conditional_evidence(tmp_path):
+    path = tmp_path / "semantics.json"
+    path.write_text(
+        '{"3":{"source":"c[p[u]]=E[u]","unknown_ifs":1}}',
+        encoding="utf-8",
+    )
+    semantics = load_semantics(path)
+    assert semantics == {3: "c[p[u]]=E[u]"}
+    assert semantics.unknown_ifs == {3: 1}
 
 
 def test_prunes_unreferenced_prototypes_but_follows_typed_refs():

@@ -84,6 +84,7 @@ def test_infers_single_stream_closure_shape_and_materializes_descriptors():
     assert "__captures[1] = R[7]" in lifted
     assert "__captures[2] = I[9]" in lifted
     assert "R[13] = __closure(1, __captures, __env)" in lifted
+    assert closures.resolved_if_count(source, ins, program) == 3
 
 
 def test_infers_randomized_descriptor_keys_and_cell_layout():
@@ -124,6 +125,11 @@ def test_infers_randomized_descriptor_keys_and_cell_layout():
     assert (shape.mode_key, shape.register_key) == (1, 3)
     assert shape.cache_name == "n"
     assert (shape.open_table_key, shape.open_index_key) == (1, 3)
+
+    descriptors = OpaqueTable("T{D1=T{D1=D0,D3=D4}}")
+    program = Program({0: _proto(0), 1: _proto(1, descriptors)}, 2)
+    ins = Instruction(0, 1, None, 1, None, ProtoRef(1), None, None, 2)
+    assert closures.resolved_if_count(source, ins, program) == 6
 
 
 def test_closure_lift_fails_closed_for_missing_or_malformed_child_metadata():

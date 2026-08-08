@@ -133,13 +133,6 @@ def render_program(program, semantics):
     metrics = dict(metrics)
     metrics["balanced_pc_dispatch"] = balanced != source
     metrics["pc_dispatch_chunk_size"] = _CHUNK_SIZE
-    # The recovery artifact counts structural ``if`` nodes in every dispatcher
-    # slot, including unused decoys and fully modeled closure/call/loop bodies.
-    # With no emitted semantic fallback, none remains unresolved in reachable
-    # source. A residual fallback keeps this metric explicitly fail-closed.
-    metrics["unresolved_dispatcher_conditionals"] = (
-        0 if metrics.get("fallback_instructions") == 0 else -1
-    )
     return balanced, metrics
 
 

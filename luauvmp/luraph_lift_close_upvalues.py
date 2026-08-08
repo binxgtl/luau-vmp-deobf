@@ -278,6 +278,11 @@ def lift_close_prefix(source: str, ins: Instruction) -> Optional[str]:
     return "\n".join(part for part in rendered if part.strip())
 
 
+def resolved_if_count(source: str, ins: Instruction) -> int:
+    """Return conditionals covered by the complete close-region proof."""
+    return _if_count(source) if lift_close_prefix(source, ins) is not None else 0
+
+
 def clean_statement(source, ins):
     existing = _ORIGINAL_CLEAN(source, ins)
     if existing is not None:

@@ -70,3 +70,13 @@ def test_quality_metrics_prefers_emitted_residual_condition_count():
     quality = _quality_metrics(pipeline, {"7": {"unknown_ifs": 9}})
 
     assert quality["unknown_ifs"] == 0
+
+
+def test_quality_gate_rejects_independent_residual_with_zero_fallbacks():
+    pipeline = _pipeline()
+    pipeline["decompiler"]["unresolved_dispatcher_conditionals"] = 1
+    quality = _quality_metrics(pipeline, {"7": {"unknown_ifs": 0}})
+
+    assert quality["fallback_instructions"] == 0
+    assert quality["unknown_ifs"] == 1
+    assert _quality_error(quality) == "unresolved dispatcher conditionals remain"
