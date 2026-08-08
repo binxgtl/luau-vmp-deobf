@@ -7,7 +7,8 @@ import sys
 
 from . import prelude, container, devirt, disasm, decompile, luraph
 from . import (luraph_devirt, luraph_pseudo, luraph_flow, luraph_full,
-               luraph_dispatch, luraph_corpus, luraph_auto)
+               luraph_dispatch, luraph_corpus, luraph_auto,
+               luraph_lua_expert, lua_expert)
 from .analyse import analyse
 from .spec import Spec
 
@@ -214,21 +215,39 @@ def cmd_luraph_full(args):
         return
 
     out_dir = args.output or (os.path.splitext(args.input)[0] + '.luraph-full')
+    use_lua_expert = not getattr(args, 'no_lua_expert', False)
     try:
-        result = luraph_auto.run_full_loader(
-            args.input,
-            out_dir,
-            runtime=args.runtime,
-            timeout=args.timeout,
-            split_protos=args.split_protos,
-            force=args.force,
-            keep_failed=args.keep_failed,
-            progress=print,
-        )
+        if use_lua_expert:
+            result = luraph_lua_expert.run_full_loader(
+                args.input,
+                out_dir,
+                runtime=args.runtime,
+                timeout=args.timeout,
+                api_timeout=getattr(args, 'api_timeout', lua_expert.DEFAULT_TIMEOUT),
+                split_protos=args.split_protos,
+                force=args.force,
+                keep_failed=args.keep_failed,
+                progress=print,
+            )
+        else:
+            result = luraph_auto.run_full_loader(
+                args.input,
+                out_dir,
+                runtime=args.runtime,
+                timeout=args.timeout,
+                split_protos=args.split_protos,
+                force=args.force,
+                keep_failed=args.keep_failed,
+                progress=print,
+            )
     except Exception as exc:
         raise SystemExit('luraph-full failed: %s' % exc)
     print('complete: {prototypes} prototypes, {instructions} instructions, '
           '{opcode_slots} opcode slots -> {out_dir}'.format(out_dir=out_dir, **result))
+    if use_lua_expert and result.get('lua_expert'):
+        external = result['lua_expert']
+        print('lua.expert: wrote %s (%d-byte luauc upload)'
+              % (external['file'], external['compiled_bytes']))
 
 
 def cmd_luraph_corpus(args):
@@ -309,7 +328,7 @@ def main(argv=None):
 
     lf = sub.add_parser(
         'luraph-full',
-        help='one-command Luraph loader -> sample-local full-prototype devirtualisation')
+        help='one-command Luraph devirtualisation + lua.expert readability post-pass')
     lf.add_argument('input', help='protected loader, or typed IR for legacy artifact mode')
     lf.add_argument('semantics', nargs='?',
                     help='legacy mode: semantics JSON recovered from the same dispatcher')
@@ -317,7 +336,11 @@ def main(argv=None):
     lf.add_argument('--runtime', default='lune',
                     help='Lune executable/command used for safe prototype capture')
     lf.add_argument('--timeout', type=int, default=300,
-                    help='safe capture timeout in seconds (default: 300)')
+                    help='safe capture/compile timeout in seconds (default: 300)')
+    lf.add_argument('--api-timeout', type=int, default=lua_expert.DEFAULT_TIMEOUT,
+                    help='lua.expert HTTP timeout in seconds (default: 30)')
+    lf.add_argument('--no-lua-expert', action='store_true',
+                    help='stay fully local; do not upload compiled luauc to lua.expert')
     lf.add_argument('--force', action='store_true',
                     help='replace an existing output directory')
     lf.add_argument('--keep-failed', action='store_true',
