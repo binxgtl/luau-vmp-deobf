@@ -1,0 +1,173 @@
+"""Lift call/clear opcode shapes whose scratch-local names are randomized.
+
+The reference lifter already recognizes these exact VM operations when Luraph
+names its scratch locals ``m`` and ``Z``. Public v14.7 randomizes those local
+names per build (for example ``e/t``, ``x/r`` or ``M/T``), which should not turn
+the same instruction shape into semantic fallback.
+
+Every pattern below uses regex backreferences so the same scratch register must
+flow through the complete sequence. No unknown statement is skipped.
+"""
+from __future__ import annotations
+
+import re
+
+from . import luraph_lift
+
+_INSTALLED = False
+_ORIGINAL_CLEAN = None
+_FIELD_RE = "[EpoH_B]"
+_ID = r"[A-Za-z_]\w*"
+_SCRATCH_NAMES = {
+    "M", "V", "h", "r", "z", "Y", "W", "n", "T", "S", "N", "g",
+    "K", "C", "Z", "e", "m", "O", "U", "F", "J", "d", "b", "y",
+    "t", "a", "i", "w", "l", "Q", "G", "k", "x", "v", "q",
+    "__s_A", "__s_I", "__s_E", "__s_p", "__s_o", "__s_H", "__s__",
+    "__s_B", "__s_L", "__s_X", "__s_c", "__s_u", "__s_R",
+}
+
+
+def _field_reg(ins, field: str) -> str:
+    return luraph_lift.reg_expr(luraph_lift.field_value(ins, field))
+
+
+def _field_value(ins, field: str) -> str:
+    return luraph_lift.value_expr(luraph_lift.field_value(ins, field))
+
+
+def clean_statement(source, ins):
+    existing = _ORIGINAL_CLEAN(source, ins)
+    if existing is not None:
+        return existing
+
+    text = luraph_lift.compact(source).rstrip(";")
+
+    # dst = dst(dst + 1), then interpreter top = dst
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=@(?P<field>" + _FIELD_RE + r");"
+        r"R\[(?P=tmp)\]=R\[(?P=tmp)\]\(R\[(?P=tmp)\+1(?:\.0)?\]\);"
+        r"(?P<top>" + _ID + r")=\(?(?P=tmp)\)?",
+        text,
+    )
+    if match:
+        base = _field_value(ins, match.group("field"))
+        return "R[%s] = R[%s](R[%s + 1])" % (base, base, base)
+
+    # dst = dst(dst + 1, dst + 2), then interpreter top = dst
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=@(?P<field>" + _FIELD_RE + r");"
+        r"R\[(?P=tmp)\]=R\[(?P=tmp)\]\(R\[(?P=tmp)\+1(?:\.0)?\],R\[(?P=tmp)\+2(?:\.0)?\]\);"
+        r"(?P<top>" + _ID + r")=\(?(?P=tmp)\)?",
+        text,
+    )
+    if match:
+        base = _field_value(ins, match.group("field"))
+        return "R[%s] = R[%s](R[%s + 1], R[%s + 2])" % (
+            base, base, base, base,
+        )
+
+    # dst(dst + 1), then interpreter top = dst - 1
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=@(?P<field>" + _FIELD_RE + r");"
+        r"R\[(?P=tmp)\]\(R\[(?P=tmp)\+1(?:\.0)?\]\);"
+        r"(?P<top>" + _ID + r")=\(?(?P=tmp)-1(?:\.0)?\)?",
+        text,
+    )
+    if match:
+        base = _field_value(ins, match.group("field"))
+        return "R[%s](R[%s + 1])" % (base, base)
+
+    # dst(dst + 1, dst + 2), then interpreter top = dst - 1
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=@(?P<field>" + _FIELD_RE + r");"
+        r"R\[(?P=tmp)\]\(R\[(?P=tmp)\+1(?:\.0)?\],R\[(?P=tmp)\+2(?:\.0)?\]\);"
+        r"(?P<top>" + _ID + r")=\(?(?P=tmp)-1(?:\.0)?\)?",
+        text,
+    )
+    if match:
+        base = _field_value(ins, match.group("field"))
+        return "R[%s](R[%s + 1], R[%s + 2])" % (base, base, base)
+
+    # dst = dst() with a randomized scratch/top local.
+    match = re.fullmatch(
+        r"(?P<tmp>" + _ID + r")=@(?P<field>" + _FIELD_RE + r");"
+        r"R\[(?P=tmp)\]=R\[(?P=tmp)\]\(\)",
+        text,
+    )
+    if match:
+        base = luraph_lift.field_value(ins, match.group("field"))
+        return "%s = %s()" % (
+            luraph_lift.reg_expr(base), luraph_lift.reg_expr(base),
+        )
+
+    # Direct register clearing loop. The loop variable is local to the emitted
+    # Luau, while both bounds come from current instruction operands.
+    match = re.fullmatch(
+        r"for(?P<tmp>" + _ID + r")=@(?P<start>" + _FIELD_RE + r"),"
+        r"@(?P<stop>" + _FIELD_RE + r")(?:,1(?:\.0)?)?do"
+        r"R\[(?P=tmp)\]=nil;?end",
+        text,
+    )
+    if match:
+        start = _field_value(ins, match.group("start"))
+        stop = _field_value(ins, match.group("stop"))
+        return "for __i = %s, %s do R[__i] = nil end" % (start, stop)
+
+    # Public builds sometimes spell the same clear through scratch aliases:
+    #   lo = p[pc]; hi = H[pc]
+    #   for i = lo, hi do t = R; k = i; i = nil; t[k] = i end
+    # Require the complete def-use chain and the cleared value to be the loop
+    # variable after it was set to nil; partial/mixed bodies never match.
+    match = re.fullmatch(
+        r"(?P<lo>" + _ID + r")=@(?P<start>" + _FIELD_RE + r");"
+        r"(?P<hi>" + _ID + r")=@(?P<stop>" + _FIELD_RE + r");"
+        r"for(?P<idx>" + _ID + r")=(?P=lo),(?P=hi)(?:,1(?:\.0)?)?do"
+        r"(?P<table>" + _ID + r")=R;"
+        r"(?P<key>" + _ID + r")=\(?(?P=idx)\)?;"
+        r"(?P=idx)=nil;"
+        r"(?P=table)\[(?P=key)\]=\(?(?P=idx)\)?;?end",
+        text,
+    )
+    if match:
+        start = _field_value(ins, match.group("start"))
+        stop = _field_value(ins, match.group("stop"))
+        return "for __i = %s, %s do R[__i] = nil end" % (start, stop)
+
+    # Copy the first N varargs into the VM register file. ``argv`` is the
+    # table.pack(...) generated by every decompiled prototype prologue and
+    # preserves nil positions just as indexing the dispatcher's ``{...}`` does.
+    match = re.fullmatch(
+        r"(?P<args>" + _ID + r")=(?:\(\{\.\.\.\}\)|\{\.\.\.\});"
+        r"for(?P<idx>" + _ID + r")=1,@(?P<count>" + _FIELD_RE + r")"
+        r"(?:,1(?:\.0)?)?do"
+        r"R\[(?P=idx)\]=(?P=args)\[(?P=idx)\];?end",
+        text,
+    )
+    if match:
+        count = _field_value(ins, match.group("count"))
+        return "for __i = 1, %s do R[__i] = argv[__i] end" % count
+
+    # A helper call followed by a persistent scratch transfer is an exact
+    # two-statement micro-op.  Both identifiers must be declared VM scratch
+    # locals; no helper identity or return value is inferred here.
+    match = re.fullmatch(
+        r"(?P<callee>" + _ID + r")\(\);(?P=callee)=(?P<next>" + _ID + r")",
+        text,
+    )
+    if match and {
+        match.group("callee"), match.group("next")
+    }.issubset(_SCRATCH_NAMES):
+        return "%s(); %s = %s" % (
+            match.group("callee"), match.group("callee"), match.group("next"),
+        )
+
+    return None
+
+
+def install() -> None:
+    global _INSTALLED, _ORIGINAL_CLEAN
+    if _INSTALLED:
+        return
+    _ORIGINAL_CLEAN = luraph_lift.clean_statement
+    luraph_lift.clean_statement = clean_statement
+    _INSTALLED = True

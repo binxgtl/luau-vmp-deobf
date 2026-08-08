@@ -1,0 +1,165 @@
+"""Keep generated Luau CFG dispatch below the compiler recursion limit.
+
+After sample-local semantic normalization, large public Luraph prototypes can
+contain thousands of recognized basic blocks. ``luraph_decompiler`` historically
+rendered those blocks as one flat ``if/elseif pc == ...`` chain. Luau represents
+that chain recursively and rejects sufficiently large prototypes before any code
+is executed.
+"""
+from __future__ import annotations
+
+import re
+from typing import List, Sequence, Tuple
+
+from . import (
+    luraph_decompiler,
+    luraph_lift,
+    luraph_lift_pairs,
+    luraph_lift_chains,
+    luraph_lift_forloops,
+    luraph_lift_calls,
+    luraph_lift_straightline,
+    luraph_lift_closures,
+    luraph_lift_close_upvalues,
+    luraph_lift_raw_upvalue_lvalues,
+    luraph_lift_raw_upvalue_rvalues,
+    luraph_reachability,
+    luraph_vararg_semantics,
+    luraph_vararg_compact_fix,
+    luraph_runtime_coroutine_identities,
+    luraph_lift_generic_for_state,
+    luraph_dispatch_known_opcode,
+    luraph_eval_string_unpack,
+)
+
+_CHUNK_SIZE = 64
+_FIRST = re.compile(r"^        if pc == (?P<pc>-?[0-9]+) then$")
+_NEXT = re.compile(r"^        elseif pc == (?P<pc>-?[0-9]+) then$")
+
+
+def _indent_one(lines: Sequence[str]) -> List[str]:
+    return [("    " + line) if line else line for line in lines]
+
+
+def _parse_dispatch(lines: Sequence[str], start: int):
+    if start + 2 >= len(lines) or lines[start] != "    while true do":
+        return None
+    first = _FIRST.match(lines[start + 1])
+    if first is None:
+        return None
+    headers: List[Tuple[int, int]] = [(start + 1, int(first.group("pc")))]
+    final_else = None
+    outer_if_end = None
+    cursor = start + 2
+    while cursor < len(lines):
+        line = lines[cursor]
+        match = _NEXT.match(line)
+        if match is not None:
+            headers.append((cursor, int(match.group("pc"))))
+        elif line == "        else":
+            final_else = cursor
+            probe = cursor + 1
+            while probe < len(lines):
+                if lines[probe] == "        end":
+                    if probe + 1 < len(lines) and lines[probe + 1] == "    end":
+                        outer_if_end = probe
+                        break
+                probe += 1
+            break
+        cursor += 1
+    if final_else is None or outer_if_end is None or not headers:
+        return None
+    pcs = [pc for _index, pc in headers]
+    if pcs != sorted(pcs) or len(set(pcs)) != len(pcs):
+        return None
+    branches = []
+    for pos, (header_index, pc) in enumerate(headers):
+        body_start = header_index + 1
+        body_end = headers[pos + 1][0] if pos + 1 < len(headers) else final_else
+        branches.append((pc, list(lines[body_start:body_end])))
+    invalid_body = list(lines[final_else + 1:outer_if_end])
+    return outer_if_end + 1, branches, invalid_body
+
+
+def _render_balanced(branches, invalid_body, chunk_size: int) -> List[str]:
+    output = ["    while true do"]
+    chunks = [branches[index:index + chunk_size]
+              for index in range(0, len(branches), chunk_size)]
+    for chunk_index, chunk in enumerate(chunks):
+        output.append("        %s pc <= %d then" %
+                      ("if" if chunk_index == 0 else "elseif", chunk[-1][0]))
+        for branch_index, (pc, body) in enumerate(chunk):
+            output.append("            %s pc == %d then" %
+                          ("if" if branch_index == 0 else "elseif", pc))
+            output.extend(_indent_one(body))
+        output.append("            else")
+        output.extend(_indent_one(invalid_body))
+        output.append("            end")
+    output.append("        else")
+    output.extend(invalid_body)
+    output.append("        end")
+    output.append("    end")
+    return output
+
+
+def balance_pc_dispatches(source: str, chunk_size: int = _CHUNK_SIZE) -> str:
+    if chunk_size < 2:
+        raise ValueError("pc dispatch chunk size must be at least 2")
+    trailing_newline = source.endswith("\n")
+    lines = source.splitlines()
+    output: List[str] = []
+    cursor = 0
+    while cursor < len(lines):
+        parsed = _parse_dispatch(lines, cursor)
+        if parsed is None:
+            output.append(lines[cursor]); cursor += 1; continue
+        end, branches, invalid_body = parsed
+        output.extend(lines[cursor:end + 1] if len(branches) <= chunk_size
+                      else _render_balanced(branches, invalid_body, chunk_size))
+        cursor = end + 1
+    result = "\n".join(output)
+    return result + ("\n" if trailing_newline else "")
+
+
+_ORIGINAL_RENDER = None
+_INSTALLED = False
+
+
+def render_program(program, semantics):
+    if _ORIGINAL_RENDER is None:
+        raise luraph_decompiler.DecompileError("balanced decompiler renderer is unavailable")
+    source, metrics = _ORIGINAL_RENDER(program, semantics)
+    balanced = balance_pc_dispatches(source)
+    metrics = dict(metrics)
+    metrics["balanced_pc_dispatch"] = balanced != source
+    metrics["pc_dispatch_chunk_size"] = _CHUNK_SIZE
+    return balanced, metrics
+
+
+def install() -> None:
+    global _ORIGINAL_RENDER, _INSTALLED
+    if _INSTALLED:
+        return
+    # Install evaluator primitives before any dispatcher recovery wrapper runs.
+    luraph_eval_string_unpack.install()
+    luraph_runtime_coroutine_identities.install()
+    luraph_vararg_semantics.install()
+    luraph_vararg_compact_fix.install()
+    luraph_lift_generic_for_state.install()
+    luraph_dispatch_known_opcode.install()
+    luraph_lift_pairs.install()
+    luraph_lift_chains.install()
+    luraph_lift_forloops.install()
+    luraph_lift_calls.install()
+    luraph_lift_straightline.install()
+    luraph_lift_closures.install()
+    luraph_lift_close_upvalues.install()
+    luraph_lift_raw_upvalue_lvalues.install()
+    luraph_lift_raw_upvalue_rvalues.install()
+    luraph_reachability.install()
+    luraph_decompiler.clean_statement = luraph_lift.clean_statement
+    luraph_decompiler.decode_branch = luraph_lift.decode_branch
+    luraph_decompiler.return_expression = luraph_lift.return_expression
+    _ORIGINAL_RENDER = luraph_decompiler.render_program
+    luraph_decompiler.render_program = render_program
+    _INSTALLED = True

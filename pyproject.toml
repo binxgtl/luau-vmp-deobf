@@ -8,6 +8,9 @@ version = "0.5.2"
 description = "Static and sandbox-assisted devirtualizer for Luau custom bytecode VMs"
 readme = "README.md"
 requires-python = ">=3.9"
+dependencies = [
+  "zstandard>=0.22,<1",
+]
 license = { text = "MIT" }
 keywords = ["luau", "lua", "deobfuscation", "reverse-engineering", "bytecode", "devirtualization"]
 classifiers = [

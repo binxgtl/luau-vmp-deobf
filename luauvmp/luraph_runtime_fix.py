@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Callable
 
 from . import luraph_capture
 
@@ -25,7 +24,7 @@ def validate_runtime_facts(path: Path) -> None:
 
 
 def install() -> None:
-    """Patch the generated runner to serialise the actual helper table."""
+    """Patch helper serialization and add read-only missing-global telemetry."""
     global _INSTALLED
     if _INSTALLED:
         return
@@ -42,6 +41,205 @@ def install() -> None:
             'writeRuntimeFacts(runtimeState[1])',
             'writeRuntimeFacts(runtimeState)',
         )
+
+        # Roblox datatypes are not injected as runner globals by Lune. Load the
+        # trusted standard library outside the recovered VM. Only an explicit
+        # allow-list of pure value constructors enters the parser environment;
+        # the module itself, Instance, auth, filesystem and network APIs remain
+        # unreachable from recovered code.
+        require_marker = 'local stdio = require("@lune/stdio")\n'
+        trusted_import = r'''local stdio = require("@lune/stdio")
+local robloxDatatypes = require("@lune/roblox")
+
+-- Path2DControlPoint is present in current Roblox bytecode but is not exported
+-- by Lune 0.10.5. Parsing only needs a stable constant value, so preserve every
+-- constructor argument as inert typed text instead of emulating engine behavior.
+local Path2DControlPointCompat = table.freeze({
+    new = function(...)
+        local input = table.pack(...)
+        local captured = {
+            __luauvmp_datatype = "Path2DControlPoint",
+            n = input.n,
+        }
+        for index = 1, input.n do
+            local value = input[index]
+            captured[index] = table.freeze({
+                kind = typeof(value),
+                text = tostring(value),
+            })
+        end
+        return table.freeze(captured)
+    end,
+})
+
+-- Some wrappers cancel a watchdog handle during parser teardown. Expose only a
+-- synchronous no-op cancel operation. Scheduling APIs remain absent so captured
+-- code cannot create, defer, or resume execution through the runner task API.
+local TaskCompat = table.freeze({
+    cancel = function(_)
+        return nil
+    end,
+})
+'''
+        if require_marker not in runner:
+            raise luraph_capture.CaptureError(
+                "safe-capture trusted import marker was not found"
+            )
+        runner = runner.replace(require_marker, trusted_import, 1)
+
+        datatype_marker = '    utf8 = utf8,\n}'
+        datatype_environment = (
+            '    utf8 = utf8,\n'
+            '    CFrame = robloxDatatypes.CFrame,\n'
+            '    Enum = robloxDatatypes.Enum,\n'
+            '    Ray = robloxDatatypes.Ray,\n'
+            '    UDim = robloxDatatypes.UDim,\n'
+            '    UDim2 = robloxDatatypes.UDim2,\n'
+            '    Vector2 = robloxDatatypes.Vector2,\n'
+            '    Vector3 = robloxDatatypes.Vector3,\n'
+            '    Path2DControlPoint = Path2DControlPointCompat,\n'
+            '    task = TaskCompat,\n'
+            '}'
+        )
+        if datatype_marker not in runner:
+            raise luraph_capture.CaptureError(
+                "safe-capture datatype environment marker was not found"
+            )
+        runner = runner.replace(datatype_marker, datatype_environment, 1)
+
+        # Never perform async I/O from the environment __index metamethod. Lune
+        # standard-library writes can yield, which previously replaced the real
+        # missing-global error with "yield across metamethod". Record names in a
+        # plain table and report them after the parser call has unwound.
+        environment_marker = 'local environment = {'
+        environment_prefix = 'local missingSafeGlobals = {}\nlocal environment = {'
+        if environment_marker not in runner:
+            raise luraph_capture.CaptureError(
+                "safe-capture environment declaration was not found"
+            )
+        runner = runner.replace(environment_marker, environment_prefix, 1)
+
+        marker = 'environment._G = environment\n\nlocal function safeLoadString'
+        telemetry = r'''environment._G = environment
+
+-- Missing Roblox/executor globals are never implemented here. A tiny family of
+-- fail-closed probes only names the exact operation that the parser attempted,
+-- with bounded argument text, then aborts. Record the first few blocked
+-- operations before raising because the protected VM can swallow the error with
+-- pcall and otherwise leave only a later, ambiguous "call a nil value" failure.
+local blockedGlobalProbes = {}
+local blockedOperations = {}
+local function renderBlockedArgs(...)
+    local input = table.pack(...)
+    local parts = {}
+    local limit = math.min(input.n, 8)
+    for index = 1, limit do
+        local value = input[index]
+        local ok, text = pcall(tostring, value)
+        if not ok then text = "<tostring-error>" end
+        text = string.sub(text, 1, 96)
+        parts[#parts + 1] = tostring(index) .. ":" .. typeof(value) .. "=" .. text
+    end
+    if input.n > limit then
+        parts[#parts + 1] = "...+" .. tostring(input.n - limit)
+    end
+    return table.concat(parts, ", ")
+end
+
+local function failBlocked(message)
+    if #blockedOperations < 8 then
+        blockedOperations[#blockedOperations + 1] = string.sub(message, 1, 512)
+    end
+    error(message, 0)
+end
+
+local function blockedObjectProbe(name)
+    local existing = blockedGlobalProbes[name]
+    if existing ~= nil then return existing end
+    local probe = setmetatable({}, {
+        __index = function(_, member)
+            local memberName = tostring(member)
+            if memberName == "new" then
+                return function(...)
+                    failBlocked(
+                        "safe-capture blocked constructor " .. name .. ".new("
+                            .. renderBlockedArgs(...) .. ")"
+                    )
+                end
+            end
+            failBlocked(
+                "safe-capture blocked access to missing global "
+                    .. name .. "." .. memberName
+            )
+        end,
+        __call = function(_, ...)
+            failBlocked(
+                "safe-capture blocked call to missing global " .. name .. "("
+                    .. renderBlockedArgs(...) .. ")"
+            )
+        end,
+        __metatable = "locked",
+    })
+    blockedGlobalProbes[name] = probe
+    return probe
+end
+
+local function blockedFunctionProbe(name)
+    return function(...)
+        failBlocked(
+            "safe-capture blocked call to missing global " .. name .. "("
+                .. renderBlockedArgs(...) .. ")"
+        )
+    end
+end
+
+setmetatable(environment, {
+    __index = function(_, key)
+        local name = tostring(key)
+        missingSafeGlobals[name] = true
+        if name == "Instance" or name == "Random"
+                or name == "game" or name == "workspace" then
+            return blockedObjectProbe(name)
+        end
+        if name == "identifyexecutor" or name == "iscclosure" or name == "islclosure" then
+            return blockedFunctionProbe(name)
+        end
+        return nil
+    end,
+})
+
+local function safeLoadString'''
+        if marker not in runner:
+            raise luraph_capture.CaptureError(
+                "safe-capture environment marker was not found"
+            )
+        runner = runner.replace(marker, telemetry, 1)
+
+        call_marker = (
+            'chunk(buffer.fromstring(bytecode))\n'
+            'status("VM parser returned")'
+        )
+        guarded_call = r'''local parserOk, parserResult = pcall(chunk, buffer.fromstring(bytecode))
+local missingNames = {}
+for key in missingSafeGlobals do
+    missingNames[#missingNames + 1] = key
+end
+table.sort(missingNames)
+if #missingNames > 0 then
+    status("missing safe-capture globals: " .. table.concat(missingNames, ", "))
+end
+if #blockedOperations > 0 then
+    status("blocked safe-capture operations: " .. table.concat(blockedOperations, " | "))
+end
+if not parserOk then
+    error(parserResult, 0)
+end
+status("VM parser returned")'''
+        if call_marker not in runner:
+            raise luraph_capture.CaptureError(
+                "safe-capture parser invocation marker was not found"
+            )
+        runner = runner.replace(call_marker, guarded_call, 1)
         return runner
 
     original_run = luraph_capture.run_capture

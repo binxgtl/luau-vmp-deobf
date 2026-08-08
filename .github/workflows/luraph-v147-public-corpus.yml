@@ -1,0 +1,150 @@
+name: Luraph v14.7 public corpus
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/luraph-v147-public-corpus.yml"
+      - "luauvmp/**"
+      - "tools/run_luraph_v147_corpus.py"
+      - "tools/probe_luraph_v147_stream.py"
+      - "tools/probe_luraph_v147_structure.py"
+      - "pyproject.toml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: luraph-v147-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        sample:
+          - 001163f72ed972da.lua
+          - 00a98a1f920aa83a.lua
+          - 02779a141d5f7738.lua
+    env:
+      LUNE_VERSION: "0.10.5"
+      LUAUVMP_FINALIZE_FALLBACK: "1"
+      LUAUVMP_INSTRUCTION_BUDGET: "5000000"
+      LUAUVMP_ZSTD_MAX_OUTPUT: "268435456"
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout deobfuscator
+        uses: actions/checkout@v4
+
+      - name: Checkout one representative sample
+        uses: actions/checkout@v4
+        with:
+          repository: terrorlua/obfuscator-samples
+          ref: a6ecd0ea7112c6a65d4b7acba40acc9e280301e3
+          path: public-samples
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            Luraph/v14.7/${{ matrix.sample }}
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package
+        run: |
+          set -euxo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install -e .
+          python -m py_compile luauvmp/*.py tools/*.py
+
+      - name: Fingerprint container streams
+        run: |
+          set -euxo pipefail
+          python tools/probe_luraph_v147_stream.py \
+            public-samples/Luraph/v14.7 \
+            --shard-index 0 \
+            --shard-count 1
+
+      - name: Probe dispatcher and closure sites
+        run: |
+          set -euxo pipefail
+          python tools/probe_luraph_v147_structure.py \
+            "public-samples/Luraph/v14.7/${{ matrix.sample }}"
+
+      - name: Install pinned Lune
+        shell: bash
+        run: |
+          set -euxo pipefail
+          archive="$RUNNER_TEMP/lune.zip"
+          bindir="$RUNNER_TEMP/lune-bin"
+          curl --fail --location --retry 3 \
+            "https://github.com/lune-org/lune/releases/download/v${LUNE_VERSION}/lune-${LUNE_VERSION}-linux-x86_64.zip" \
+            --output "$archive"
+          mkdir -p "$bindir"
+          python - "$archive" "$bindir" <<'PY'
+          import sys, zipfile
+          with zipfile.ZipFile(sys.argv[1]) as archive:
+              archive.extractall(sys.argv[2])
+          PY
+          lune="$(find "$bindir" -type f -name lune -print -quit)"
+          test -n "$lune"
+          chmod +x "$lune"
+          echo "$(dirname "$lune")" >> "$GITHUB_PATH"
+
+      - name: Decompile representative sample
+        run: |
+          set -euxo pipefail
+          python tools/run_luraph_v147_corpus.py \
+            public-samples/Luraph/v14.7 \
+            --shard-index 0 \
+            --shard-count 1 \
+            --timeout 180 \
+            --max-failures 1 \
+            -o "corpus-results/${{ matrix.sample }}"
+
+      - name: Enforce fully-devirtualized quality gate
+        run: |
+          set -euxo pipefail
+          sample="${{ matrix.sample }}"
+          root="corpus-results/${sample}/${sample%.lua}"
+          python - "$root/pipeline.json" "$root/artifacts/opcode_semantics.json" <<'PY'
+          import json
+          import sys
+
+          pipeline = json.load(open(sys.argv[1], encoding="utf-8"))
+          semantics = json.load(open(sys.argv[2], encoding="utf-8"))
+          decompiler = pipeline.get("decompiler", {})
+          unknown_ifs = decompiler.get("unresolved_dispatcher_conditionals", -1)
+          if isinstance(unknown_ifs, bool) or not isinstance(unknown_ifs, int):
+              unknown_ifs = -1
+          quality = {
+              "compile_checked": decompiler.get("compile_checked") is True,
+              "fallback_instructions": int(decompiler.get("fallback_instructions", -1)),
+              "unknown_ifs": unknown_ifs,
+              "payload_executed": pipeline.get("payload_executed"),
+              "final_payload_executed": pipeline.get("final_payload_executed"),
+          }
+          print(json.dumps(quality, sort_keys=True))
+          assert quality["compile_checked"], quality
+          assert quality["fallback_instructions"] == 0, quality
+          assert quality["unknown_ifs"] == 0, quality
+          assert quality["payload_executed"] is False, quality
+          assert quality["final_payload_executed"] is False, quality
+          PY
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: luraph-v147-${{ matrix.sample }}
+          path: corpus-results/${{ matrix.sample }}
+          if-no-files-found: warn
+          retention-days: 7

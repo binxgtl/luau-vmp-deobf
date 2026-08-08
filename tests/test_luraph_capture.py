@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
@@ -10,9 +12,6 @@ from luauvmp.luraph_capture import (
     build_lune_runner,
     extract_interpreter_factory,
     instrument_vm_source,
-)
-from luauvmp.luraph_early_capture import (
-    instrument_vm_source as early_instrument_vm_source,
 )
 
 
@@ -42,8 +41,9 @@ def test_factory_extraction_is_structural():
 
 
 def test_fail_closed_instrumenter_is_installed_for_public_api():
-    assert luraph_capture.instrument_vm_source is early_instrument_vm_source
-    assert instrument_vm_source is early_instrument_vm_source
+    assert luraph_capture.instrument_vm_source is instrument_vm_source
+    with pytest.raises(luraph_capture.CaptureError):
+        instrument_vm_source('return function() end')
 
 
 def test_payload_execution_is_intercepted_before_root_runs():
@@ -56,14 +56,28 @@ def test_payload_execution_is_intercepted_before_root_runs():
 
 def test_lune_runner_has_closed_capture_boundary():
     runner = build_lune_runner('vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv')
-    assert 'chunk(buffer.fromstring(bytecode))' in runner
+    assert 'pcall(chunk, buffer.fromstring(bytecode))' in runner
     assert '__LUAUVMP_CAPTURE = capture' in runner
     assert 'captured Luraph payload closure is intentionally disabled' in runner
     assert 'injectGlobals = false' in runner
     assert '@lune/net' not in runner
     assert 'require = require' not in runner
     assert 'process = process' not in runner
-    assert '@lune/roblox' not in runner
+    assert 'game = game' not in runner
+
+
+def test_lune_runner_allowlists_only_pure_datatypes():
+    runner = build_lune_runner('vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv')
+    assert 'local robloxDatatypes = require("@lune/roblox")' in runner
+    for name in ('CFrame', 'Enum', 'Ray', 'UDim', 'UDim2', 'Vector2', 'Vector3'):
+        assert f'{name} = robloxDatatypes.{name}' in runner
+    assert 'Path2DControlPoint = Path2DControlPointCompat' in runner
+    assert '__luauvmp_datatype = "Path2DControlPoint"' in runner
+    assert 'kind = typeof(value)' in runner
+    assert 'text = tostring(value)' in runner
+    assert 'robloxDatatypes = robloxDatatypes' not in runner
+    assert 'Instance = robloxDatatypes.Instance' not in runner
+    assert 'getAuthCookie' not in runner
 
 
 def test_lune_runner_supplies_bootstrap_compatibility_without_privileges():
@@ -76,6 +90,17 @@ def test_lune_runner_supplies_bootstrap_compatibility_without_privileges():
     assert 'injectGlobals = false' in runner
     assert 'getupvalue' not in runner
     assert 'setupvalue' not in runner
+
+
+def test_missing_global_telemetry_never_yields_from_metamethod():
+    runner = build_lune_runner('vm.luau', 'bc.bin', 'full.tsv', 'facts.tsv')
+    assert 'local missingSafeGlobals = {}' in runner
+    assert 'local name = tostring(key)' in runner
+    assert 'missingSafeGlobals[name] = true' in runner
+    assert 'status("missing safe-capture global: "' not in runner
+    assert 'status("missing safe-capture globals: "' in runner
+    assert 'local parserOk, parserResult = pcall(chunk, buffer.fromstring(bytecode))' in runner
+    assert 'if not parserOk then' in runner
 
 
 def test_lune_runner_uses_optimized_compile_and_reports_progress():

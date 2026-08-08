@@ -35,7 +35,12 @@ def test_build_cfg_from_sample_local_semantics():
 def test_render_compile_target_lifts_common_operations():
     program, semantics = sample_program()
     source, metrics = render_program(program, semantics)
-    assert 'PROTO[0] = function(P, I, ...)' in source
+    assert 'PROTO[0] = function(__captured, __env, ...)' in source
+    assert 'local I = __captured or {}' in source
+    assert 'local L, H, W, X, V, n, h, q, y, j, t, a, i, k, x, v' in source
+    assert '__env = __env or getfenv()' in source
+    assert 'local function __upget(cell)' in source
+    assert 'local function __close_cell(cell)' in source
     assert 'R[0] = "game"' in source
     assert 'R[1] = R[0] + 4' in source
     assert 'if R[1] then pc = 5 else pc = 4 end' in source
@@ -50,12 +55,12 @@ def test_unknown_superinstruction_is_preserved_as_compile_safe_data(tmp_path):
     ])
     metrics = write_decompiled(
         Program({0: proto}, 1),
-        {200: 'm=(o[u]); O=m+1; c[o[u]]=O;'},
+        {200: 'm=(o[u]); O=A[99](m); c[o[u]]=O;'},
         tmp_path,
     )
     text = (tmp_path / 'program.decompiled.luau').read_text()
-    assert 'do local __semantic_fallback = "m=(0); O=m+1; R[0]=O;" end' in text
-    assert '\n            m=(0);' not in text
+    assert 'do local __semantic_fallback = "m=(0); O=A[99](m); R[0]=O;" end' in text
+    assert '\n            O=A[99](m);' not in text
     assert metrics['fallback_instructions'] == 1
     assert metrics['clean_instructions'] == 0
 
