@@ -5,14 +5,17 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "luau-vmp-deobf"
 version = "0.5.2"
-description = "Static and sandbox-assisted devirtualizer for Luau custom bytecode VMs"
+description = "Luau/Lua VM deobfuscator and Luraph v14.x devirtualizer with static and sandbox-assisted analysis"
 readme = "README.md"
 requires-python = ">=3.9"
 dependencies = [
   "zstandard>=0.22,<1",
 ]
 license = { text = "MIT" }
-keywords = ["luau", "lua", "deobfuscation", "reverse-engineering", "bytecode", "devirtualization"]
+keywords = [
+  "luau", "lua", "luraph", "luraph-v14", "moonveil", "deobfuscation",
+  "reverse-engineering", "bytecode", "devirtualization", "vm-protection"
+]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
@@ -24,6 +27,7 @@ classifiers = [
 [project.scripts]
 luauvmp = "luauvmp.cli:main"
 luauvmp-artifacts = "luauvmp.luraph_artifacts:main"
+luauvmp-vm-diagnose = "luauvmp.luraph_vm_diagnostics:main"
 
 [tool.setuptools.packages.find]
 include = ["luauvmp*", "tools*"]
