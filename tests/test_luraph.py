@@ -35,7 +35,7 @@ def _loader(vm_payload, bc_payload):
             '[==[%s]==] [==[%s]==]' % (vm_payload, bc_payload))
 
 
-def _single_stream_fixture():
+def _single_stream_fixture(receiver='game:GetService("EncodingService")'):
     compressor = zstd.ZstdCompressor(level=1)
     for length in range(1, 1024):
         original = (b'public-v14.7-bytecode-' * length)[:length]
@@ -45,9 +45,9 @@ def _single_stream_fixture():
             source = (
                 '-- protected using Luraph v14.7\n'
                 'return({P=[=[%s]=],f=function(m,k)'
-                'return game:GetService("EncodingService"):DecompressBuffer('
+                'return %s:DecompressBuffer('
                 'k,Enum.CompressionAlgorithm.Zstd)end}):f(...)'
-            ) % payload
+            ) % (payload, receiver)
             return source, original
     raise AssertionError('could not construct aligned Zstandard fixture')
 
@@ -113,6 +113,62 @@ def test_detect_and_unpack_public_single_stream_zstd():
     assert 'local Enum = {CompressionAlgorithm = {}};' in text
     assert 'game:GetService' not in text
     assert '__LUAUVMP_BYTECODE' in text
+
+
+def test_single_stream_zstd_accepts_local_decompress_receiver_alias():
+    source, original = _single_stream_fixture(receiver='Encoding')
+    assert luraph.detect(source) is True
+    report = luraph_loader.diagnose(source)
+    assert report['layout'] == 'single-stream-zstd'
+    assert report['single_stream_externalizable'] is True
+
+    vm, bytecode = luraph.unpack(source)
+    assert bytecode == original
+    text = vm.decode()
+    assert 'Encoding:DecompressBuffer' not in text
+    assert '__LUAUVMP_BYTECODE' in text
+
+
+def test_long_bracket_initial_newline_is_semantically_removed():
+    source, original = _single_stream_fixture(receiver='Encoding')
+    source = source.replace('P=[=[LPH', 'P=[=[\nLPH', 1)
+    assert luraph.detect(source) is True
+    report = luraph_loader.diagnose(source)
+    assert report['valid_lph_streams'] == 1
+    vm, bytecode = luraph.unpack(source)
+    assert vm.startswith(b'local __LUAUVMP_BYTECODE = ...;')
+    assert bytecode == original
+
+
+def test_diagnose_reports_unexternalizable_single_stream_without_execution():
+    source, _original = _single_stream_fixture(receiver='Encoding')
+    source = source.replace(':DecompressBuffer(', ':Inflate(', 1)
+    report = luraph_loader.diagnose(source)
+    assert report == {
+        'detected': True,
+        'layout': 'single-stream-zstd',
+        'long_strings': 1,
+        'raw_lph_streams': 1,
+        'valid_lph_streams': 1,
+        'zstd_streams': 1,
+        'legacy_signature': False,
+        'single_stream_externalizable': False,
+    }
+    with pytest.raises(ValueError, match='no supported DecompressBuffer call'):
+        luraph.unpack(source)
+
+
+def test_diagnose_plain_lua():
+    assert luraph_loader.diagnose("print('hello world')") == {
+        'detected': False,
+        'layout': 'not-luraph',
+        'long_strings': 0,
+        'raw_lph_streams': 0,
+        'valid_lph_streams': 0,
+        'zstd_streams': 0,
+        'legacy_signature': False,
+        'single_stream_externalizable': None,
+    }
 
 
 def test_unpack_public_two_stream_zstd_removes_ascii85_padding():
