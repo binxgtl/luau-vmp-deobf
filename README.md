@@ -278,11 +278,22 @@ python -m py_compile luauvmp/*.py tools/*.py
 
 No protected sample or decoded payload is included in the repository.
 
-## Support the project
+## Donate / support the project
 
-Repository-side GitHub Sponsors metadata is configured in `.github/FUNDING.yml`.
-When the maintainer's GitHub Sponsors account is approved and enabled, GitHub can
-show the repository Sponsor button automatically.
+If this tool saves you time, you can support ongoing maintenance through any of
+these methods:
+
+- **PayPal:** [paypal.me/binxgtl](https://paypal.me/binxgtl)
+- **Litecoin (LTC):** `MTRtmPKAvBU9WHJ8EyqNenH4dvNXYmkbxJ`
+- **MBBank / VietQR:** account **LUONG TRUNG KIEN**, account number
+  **50382665425**. Scan the QR below with a Vietnamese banking app.
+
+<p align="left">
+  <img src="assets/donate-mbbank.svg" width="320" alt="MBBank VietQR donation QR for LUONG TRUNG KIEN" />
+</p>
+
+GitHub repository funding metadata is also configured in `.github/FUNDING.yml`
+for GitHub Sponsors and PayPal.
 
 ## Scope and intent
 
