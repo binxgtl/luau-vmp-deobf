@@ -36,9 +36,25 @@ _ZSTD_MAGIC = b"\x28\xb5\x2f\xfd"
 _DEFAULT_ZSTD_LIMIT = 256 * 1024 * 1024
 
 
+def _semantic_long_string(payload: str) -> str:
+    """Apply Lua/Luau's one special long-string newline rule.
+
+    When a long-bracket literal starts with a newline immediately after the
+    opening delimiter, Lua removes that initial newline from the string value.
+    Regex extraction sees the source spelling instead, so failing to mirror the
+    language rule makes otherwise valid ``LPH`` streams look like ``\nLPH`` and
+    causes false negatives during loader detection.
+    """
+    if payload.startswith("\r\n"):
+        return payload[2:]
+    if payload.startswith(("\n", "\r")):
+        return payload[1:]
+    return payload
+
+
 def extract_payloads(source):
-    """Return all Lua long-bracket strings in source order."""
-    return [match.group(2) for match in _LONG_BRACKET.finditer(source)]
+    """Return all Lua long-bracket string values in source order."""
+    return [_semantic_long_string(match.group(2)) for match in _LONG_BRACKET.finditer(source)]
 
 
 def _looks_like_luraph_stream(payload):
@@ -65,9 +81,30 @@ def _luraph_payloads(source):
             if _looks_like_luraph_stream(payload)]
 
 
+def _stream_has_zstd_magic(payload: str) -> bool:
+    """Confirm a public Zstd stream from its decoded frame header.
+
+    This deliberately avoids depending on randomized/minified wrapper names.
+    The Ascii85 decoder can add up to three bytes only at the *end* of a stream,
+    so the four-byte frame magic is stable even when an exact trim declaration
+    is required later for decompression.
+    """
+    try:
+        coded = _base.decode_base85(payload, drop=5)
+    except (IndexError, TypeError, ValueError):
+        return False
+    return coded.startswith(_ZSTD_MAGIC)
+
+
 def _is_single_stream_zstd(source, payloads=None):
     streams = _luraph_payloads(source) if payloads is None else payloads
-    return len(streams) == 1 and "DecompressBuffer" in source
+    if len(streams) != 1:
+        return False
+    # Older detection required the literal Roblox API method name. Keep that
+    # fast structural hint, but also recognize the stream itself so harmless
+    # aliasing/minification cannot make a valid v14.7 loader fall through to the
+    # unrelated luau-vmp analyser.
+    return "DecompressBuffer" in source or _stream_has_zstd_magic(streams[0])
 
 
 def detect(source):
@@ -156,7 +193,7 @@ def _looks_like_vm_source(data: bytes) -> bool:
 
 def _unpack_zstd_streams(source: str, payloads: Sequence[str]) -> Optional[Tuple[bytes, bytes]]:
     """Try the public EncodingService container before the legacy range coder."""
-    if "DecompressBuffer" not in source or not payloads:
+    if not payloads:
         return None
     coded = [_base.decode_base85(payload, drop=5) for payload in payloads[:2]]
     trims = _declared_trim_lengths(source, coded)
