@@ -3,6 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+import pytest
 import zstandard as zstd
 
 from luauvmp import luraph, luraph_loader
