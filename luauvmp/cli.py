@@ -1,5 +1,6 @@
 """Command line interface."""
 import argparse
+import json
 import re
 import io
 import os
@@ -99,10 +100,19 @@ def _report(rep, spec):
     out.write('-----------------------------------------------------------\n')
 
 
+def _luraph_redirect(input_path, report):
+    return (
+        'Luraph v14.x loader detected (%s) - not a luau-vmp script. '
+        'Use `luauvmp luraph-full %s -o recovered` for the full pipeline, or '
+        '`luauvmp luraph-diagnose %s --json` for static diagnostics.'
+        % (report['layout'], input_path, input_path)
+    )
+
+
 def cmd_deobf(args):
-    if luraph.detect(read_source(args.input)):
-        raise SystemExit("Luraph v14.x loader detected - not a luau-vmp script. "
-                         "Use `luauvmp luraph %s` to unpack it." % args.input)
+    src = read_source(args.input)
+    if luraph.detect(src):
+        raise SystemExit(_luraph_redirect(args.input, luraph.diagnose(src)))
     spec, rep, norm, root, data = build(args.input, args.profile, args.verbose, args.image)
     base = args.output or os.path.splitext(args.input)[0]
     src = decompile.decompile(root, spec)
@@ -119,8 +129,7 @@ def cmd_deobf(args):
 def cmd_inspect(args):
     src = read_source(args.input)
     if luraph.detect(src):
-        raise SystemExit("Luraph v14.x loader detected - not a luau-vmp script. "
-                         "Use `luauvmp luraph %s` to unpack it." % args.input)
+        raise SystemExit(_luraph_redirect(args.input, luraph.diagnose(src)))
     prof = Spec.load(args.profile) if args.profile else None
     spec, rep, norm = analyse(src, prof)
     _report(rep, spec)
@@ -158,7 +167,15 @@ def cmd_luraph(args):
     src = read_source(args.input)
     if not luraph.detect(src):
         raise SystemExit('no Luraph v14.x loader detected in %s' % args.input)
-    vm, bytecode = luraph.unpack(src)
+    try:
+        vm, bytecode = luraph.unpack(src)
+    except ValueError as exc:
+        report = luraph.diagnose(src)
+        raise SystemExit(
+            'Luraph unpack failed (%s): %s\n'
+            'Run `luauvmp luraph-diagnose %s --json` for static loader details.'
+            % (report['layout'], exc, args.input)
+        )
     base = args.output or os.path.splitext(args.input)[0]
     parent = os.path.dirname(os.path.abspath(base))
     os.makedirs(parent, exist_ok=True)
@@ -170,6 +187,33 @@ def cmd_luraph(args):
           % (base, len(vm)))
     print('wrote %s.bytecode.bin (%d bytes) - Luraph VM bytecode'
           % (base, len(bytecode)))
+
+
+def cmd_luraph_diagnose(args):
+    """Print a static Luraph envelope diagnosis without unpacking or execution."""
+    report = luraph.diagnose(read_source(args.input))
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    else:
+        print('-- Luraph loader diagnosis ---------------------------------')
+        print('  detected            : %s' % ('yes' if report['detected'] else 'no'))
+        print('  layout              : %s' % report['layout'])
+        print('  long strings        : %d' % report['long_strings'])
+        print('  raw LPH streams     : %d' % report['raw_lph_streams'])
+        print('  valid LPH streams   : %d' % report['valid_lph_streams'])
+        print('  Zstd streams        : %d' % report['zstd_streams'])
+        print('  legacy signature    : %s'
+              % ('yes' if report['legacy_signature'] else 'no'))
+        if report['single_stream_externalizable'] is not None:
+            print('  VM externalizable   : %s'
+                  % ('yes' if report['single_stream_externalizable'] else 'no'))
+        print('-----------------------------------------------------------')
+        if report['detected'] and report['single_stream_externalizable'] is not False:
+            print('next: luauvmp luraph-full %s -o recovered' % args.input)
+        elif report['detected']:
+            print('note: loader envelope is recognized, but this single-stream wrapper '
+                  'uses an unsupported decompression call shape')
+    return 0 if report['detected'] else 1
 
 
 def cmd_luraph_devirt(args):
@@ -313,10 +357,17 @@ def main(argv=None):
     u.add_argument('-o', '--output')
     u.set_defaults(func=cmd_unpack)
 
-    l = sub.add_parser('luraph', help='unpack a Luraph v14.x loader (base85 + range coder)')
+    l = sub.add_parser('luraph', help='unpack a Luraph v14.x loader')
     l.add_argument('input')
     l.add_argument('-o', '--output')
     l.set_defaults(func=cmd_luraph)
+
+    ld = sub.add_parser(
+        'luraph-diagnose',
+        help='statically classify a Luraph loader without unpacking or execution')
+    ld.add_argument('input')
+    ld.add_argument('--json', action='store_true', help='emit machine-readable JSON')
+    ld.set_defaults(func=cmd_luraph_diagnose)
 
     lr = sub.add_parser('luraph-devirt',
                         help='stages 2-4: devirtualize a Luraph proto dump into '

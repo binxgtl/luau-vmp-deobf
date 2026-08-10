@@ -19,12 +19,18 @@ import zstandard as zstd
 from . import luraph as _base
 
 _LONG_BRACKET = re.compile(r"\[(=*)\[(.*?)\]\1\]", re.S)
+_STRING_LITERAL = r"(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*')"
+_DECOMPRESS_RECEIVER = (
+    r"(?:"
+    r"[A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*"
+    r"|game\s*:\s*GetService\(" + _STRING_LITERAL + r"\)"
+    r")"
+)
 _DECOMPRESS_CALL = re.compile(
-    r"game\s*:\s*GetService\("
-    r"(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*')"
-    r"\)\s*:\s*DecompressBuffer\("
-    r"(?:[^()\"']|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|\([^()]*\))*"
-    r"\)",
+    _DECOMPRESS_RECEIVER
+    + r"\s*:\s*DecompressBuffer\("
+    + r"(?:[^()\"']|\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|\([^()]*\))*"
+    + r"\)",
     re.S,
 )
 _TRIM_ASSIGN = re.compile(
@@ -105,6 +111,52 @@ def _is_single_stream_zstd(source, payloads=None):
     # aliasing/minification cannot make a valid v14.7 loader fall through to the
     # unrelated luau-vmp analyser.
     return "DecompressBuffer" in source or _stream_has_zstd_magic(streams[0])
+
+
+def diagnose(source):
+    """Return a static, JSON-serialisable loader classification.
+
+    No stream is decompressed and no recovered code is executed. This is meant
+    for CLI diagnostics and issue reports where a user needs to distinguish a
+    detection failure from an unsupported wrapper shape.
+    """
+    long_strings = extract_payloads(source)
+    raw = [payload for payload in long_strings if payload.startswith("LPH")]
+    streams = [payload for payload in raw if _looks_like_luraph_stream(payload)]
+    zstd = [_stream_has_zstd_magic(payload) for payload in streams]
+    legacy_signature = "52200625" in source and "614125" in source
+    single_zstd = len(streams) == 1 and bool(zstd and zstd[0])
+    detected = (
+        len(streams) >= 2
+        or (len(streams) == 1 and ("DecompressBuffer" in source or single_zstd))
+        or (legacy_signature and len(raw) >= 2)
+    )
+
+    if len(streams) >= 2 and len(zstd) >= 2 and all(zstd[:2]):
+        layout = "two-stream-zstd"
+    elif len(streams) >= 2:
+        layout = "two-stream-legacy"
+    elif single_zstd:
+        layout = "single-stream-zstd"
+    elif raw:
+        layout = "unsupported-lph"
+    else:
+        layout = "not-luraph"
+
+    externalizable = None
+    if layout == "single-stream-zstd":
+        externalizable = _DECOMPRESS_CALL.search(source) is not None
+
+    return {
+        "detected": detected,
+        "layout": layout,
+        "long_strings": len(long_strings),
+        "raw_lph_streams": len(raw),
+        "valid_lph_streams": len(streams),
+        "zstd_streams": sum(bool(item) for item in zstd),
+        "legacy_signature": legacy_signature,
+        "single_stream_externalizable": externalizable,
+    }
 
 
 def detect(source):
@@ -220,18 +272,23 @@ def _unpack_zstd_streams(source: str, payloads: Sequence[str]) -> Optional[Tuple
 
 
 def externalize_single_stream_vm(source):
-    """Replace Roblox decompression with the bytecode buffer passed as ``...``.
+    """Replace public decompression with the bytecode buffer passed as ``...``.
 
-    The capture runner already invokes every recovered VM chunk with the
-    external virtual bytecode buffer. A lexical binding keeps that capability
-    local to the wrapper and avoids adding a writable global to the sandbox.
-    ``Enum`` is stubbed only because the wrapper stores it before the replaced
-    decompression site; no Roblox service is exposed.
+    The receiver is allowed to be either the original ``game:GetService(...)``
+    expression or a simple local/dotted alias such as ``Encoding``. The entire
+    call is removed before the recovered wrapper runs, so no Roblox service or
+    receiver capability is introduced into the sandbox.
     """
     patched, count = _DECOMPRESS_CALL.subn("__LUAUVMP_BYTECODE", source, count=1)
     if count != 1:
         raise ValueError(
-            "expected one EncodingService DecompressBuffer call, found %d" % count
+            "single-stream Zstd loader detected, but no supported "
+            "DecompressBuffer call could be externalized"
+        )
+    if _DECOMPRESS_CALL.search(patched):
+        raise ValueError(
+            "single-stream Zstd loader contained multiple supported "
+            "DecompressBuffer calls; refusing ambiguous externalization"
         )
     prefix = (
         "local __LUAUVMP_BYTECODE = ...;"
@@ -270,6 +327,7 @@ def unpack(source):
 _base.extract_payloads = extract_payloads
 _base.detect = detect
 _base.unpack = unpack
+_base.diagnose = diagnose
 
 decode_base85 = _base.decode_base85
 decompress = _base.decompress
