@@ -1,7 +1,9 @@
 # luau-vmp-deobf
 
-Static and sandbox-assisted analysis for Luau scripts protected by custom
-bytecode VMs, including staged **Luraph v14.x** loaders.
+Luau/Lua VM **deobfuscator and devirtualizer** for authorised reverse
+engineering of protected scripts. It provides static and sandbox-assisted
+analysis for custom Luau bytecode VMs and staged **Luraph v14.x** loaders,
+including the public Luraph v14.7 families covered by the regression corpus.
 
 The Luraph pipeline derives opcode semantics from the interpreter embedded in
 the same input. It does not assume stable opcode numbers or helper slots.
@@ -203,6 +205,21 @@ runtime facts before dispatcher recovery.
 Every opcode used by the final tree must have a recovered semantic before output
 is committed.
 
+### Diagnose an unsupported recovered VM
+
+If static unpack succeeds but dispatcher/factory capture fails, generate a small
+privacy-safe report instead of publishing the whole recovered interpreter:
+
+```bash
+luauvmp luraph protected.lua -o stage1
+luauvmp-vm-diagnose stage1.vm.lua -o stage1.vm.diagnose.json
+```
+
+The JSON contains structural hashes, candidate helper slots, dispatcher/final
+constructor counts, and the current extractor/instrumenter result. It contains
+**no VM source snippets** and does not execute the recovered VM. Attach that JSON
+to an issue when a new Luraph family is not recognised.
+
 ## Artifact mode
 
 For externally captured typed IR and a matching dispatcher map:
@@ -260,6 +277,12 @@ python -m py_compile luauvmp/*.py tools/*.py
 ```
 
 No protected sample or decoded payload is included in the repository.
+
+## Support the project
+
+Repository-side GitHub Sponsors metadata is configured in `.github/FUNDING.yml`.
+When the maintainer's GitHub Sponsors account is approved and enabled, GitHub can
+show the repository Sponsor button automatically.
 
 ## Scope and intent
 
