@@ -29,6 +29,14 @@ from .luraph_prebootstrap_capture import install as _install_prebootstrap_captur
 
 _install_prebootstrap_capture()
 
+# Other v14.7 families never expose the legacy final-return constructor shape:
+# the dispatcher factory is assigned to a randomized helper slot and its result
+# is immediately invoked exactly once. Tie that application to the same helper
+# and numeric slot, then capture the root before the returned closure can run.
+from .luraph_immediate_capture import install as _install_immediate_capture
+
+_install_immediate_capture()
+
 # The Lune runner is generated through two string-literal layers. Correct the
 # capture TSV delimiters before any CLI or library caller builds the runner.
 from .luraph_capture_format import install as _install_capture_format
