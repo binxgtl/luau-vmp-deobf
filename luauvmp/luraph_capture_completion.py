@@ -1,9 +1,16 @@
-"""Accept only the deliberate abort that occurs after a complete safe capture.
+"""Accept parser termination after a complete, independently verified safe capture.
 
-Pre-bootstrap instrumentation can make a wrapper call the disabled closure after
-``__LUAUVMP_CAPTURE`` has already serialized the full prototype tree. That call
-must stay disabled. This layer treats the resulting sentinel error as successful
-capture only after independently validating the completed artifacts.
+Some wrappers continue executing bootstrap glue after ``__LUAUVMP_CAPTURE`` has
+already serialized the full prototype tree. That glue may call the deliberately
+disabled closure, touch unavailable Roblox globals, or otherwise fail inside the
+closed sandbox. Once the typed IR and supporting artifacts are complete, those
+post-capture failures are irrelevant to stage 2 and must not discard a valid
+capture.
+
+This layer therefore accepts a non-zero parser termination only after seeing the
+``capture complete`` marker and independently validating the typed IR, runtime
+facts, factory, instrumented VM, and generated runner. Failures before capture
+completion still propagate unchanged.
 """
 from __future__ import annotations
 
@@ -14,15 +21,17 @@ from . import luraph_capture
 from .luraph_runtime_fix import validate_runtime_facts
 
 
+# Retained for compatibility with older callers/tests and for the common case
+# where the wrapper explicitly invokes the disabled payload closure.
 _SENTINEL = "captured Luraph payload closure is intentionally disabled"
 _COMPLETE = re.compile(r"\[capture\] capture complete: (?P<count>[0-9]+) prototypes")
 
 
 def _validate_complete_ir(path: Path, expected_count: int) -> None:
     if expected_count <= 0:
-        raise luraph_capture.CaptureError("post-capture sentinel reported zero prototypes")
+        raise luraph_capture.CaptureError("post-capture termination reported zero prototypes")
     if not path.is_file():
-        raise luraph_capture.CaptureError("post-capture sentinel had no typed IR artifact")
+        raise luraph_capture.CaptureError("post-capture termination had no typed IR artifact")
 
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     if not lines:
@@ -52,8 +61,6 @@ def _validate_complete_ir(path: Path, expected_count: int) -> None:
 
 def _recover_expected_abort(error: Exception, work_dir: Path):
     message = str(error)
-    if _SENTINEL not in message:
-        return None
     matches = list(_COMPLETE.finditer(message))
     if not matches:
         return None
@@ -68,7 +75,7 @@ def _recover_expected_abort(error: Exception, work_dir: Path):
     _validate_complete_ir(ir_path, expected)
     if not facts_path.is_file():
         raise luraph_capture.CaptureError(
-            "post-capture sentinel had no runtime helper facts"
+            "post-capture termination had no runtime helper facts"
         )
     validate_runtime_facts(facts_path)
     for path, label in (
@@ -78,7 +85,7 @@ def _recover_expected_abort(error: Exception, work_dir: Path):
     ):
         if not path.is_file() or path.stat().st_size == 0:
             raise luraph_capture.CaptureError(
-                "post-capture sentinel had no complete %s artifact" % label
+                "post-capture termination had no complete %s artifact" % label
             )
 
     return luraph_capture.CaptureArtifacts(
@@ -109,7 +116,7 @@ def run_capture(*args, **kwargs):
         if progress is None and len(args) >= 6:
             progress = args[5]
         if progress is not None:
-            progress("[capture] accepted verified post-capture sentinel abort")
+            progress("[capture] accepted verified post-capture termination")
         return artifacts
 
 
