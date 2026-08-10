@@ -20,11 +20,12 @@ from . import luraph as _base
 
 _LONG_BRACKET = re.compile(r"\[(=*)\[(.*?)\]\1\]", re.S)
 _STRING_LITERAL = r"(?:\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*')"
+_DOTTED_RECEIVER = r"[A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*"
 _DECOMPRESS_RECEIVER = (
     r"(?:"
-    r"[A-Za-z_]\w*(?:\s*\.\s*[A-Za-z_]\w*)*"
-    r"|game\s*:\s*GetService\(" + _STRING_LITERAL + r"\)"
-    r")"
+    + _DOTTED_RECEIVER
+    + r"(?:\s*:\s*GetService\(" + _STRING_LITERAL + r"\))?"
+    + r")"
 )
 _DECOMPRESS_CALL = re.compile(
     _DECOMPRESS_RECEIVER
@@ -344,10 +345,10 @@ def _unpack_zstd_streams(source: str, payloads: Sequence[str]) -> Optional[Tuple
 def externalize_single_stream_vm(source):
     """Replace public decompression with the bytecode buffer passed as ``...``.
 
-    The receiver is allowed to be either the original ``game:GetService(...)``
-    expression or a simple local/dotted alias such as ``Encoding``. The entire
-    call is removed before the recovered wrapper runs, so no Roblox service or
-    receiver capability is introduced into the sandbox.
+    The receiver may be a local/dotted alias such as ``Encoding`` or a dotted
+    Roblox service owner such as ``A.R:GetService(...)``. The entire call is
+    removed before the recovered wrapper runs, so no Roblox service or receiver
+    capability is introduced into the sandbox.
     """
     patched, count = _DECOMPRESS_CALL.subn("__LUAUVMP_BYTECODE", source, count=1)
     if count != 1:
