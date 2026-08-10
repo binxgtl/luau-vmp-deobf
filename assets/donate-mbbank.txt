@@ -1,5 +1,0 @@
-VietQR payload decoded from the maintainer-provided MBBank QR image:
-
-00020101021138570010A000000727012700069704220113VQRQAFSMK93500208QRIBFTTA53037045802VN62150107NPS686908006304664B
-
-This text is retained only to make the generated SVG auditable and reproducible.
