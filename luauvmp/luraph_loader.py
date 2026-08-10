@@ -233,6 +233,75 @@ def _declared_trim_lengths(source: str, coded: Sequence[bytes]) -> Optional[List
     return matched
 
 
+def _zstd_frame_length(data: bytes) -> int:
+    """Return the exact byte length of one standard Zstandard frame.
+
+    Luraph's Ascii85 encoder emits complete 4-byte groups, so an unaligned
+    compressed frame may gain one to three zero bytes after the real frame.
+    Parsing only the outer Zstandard frame/block headers lets us identify that
+    boundary without decompressing or trusting payload-local constants.
+    """
+    if len(data) < 5 or not data.startswith(_ZSTD_MAGIC):
+        raise ValueError("Zstandard frame magic was not found")
+
+    cursor = 4
+    descriptor = data[cursor]
+    cursor += 1
+    if descriptor & 0x08:
+        raise ValueError("Zstandard frame uses reserved descriptor bit")
+
+    content_size_flag = descriptor >> 6
+    single_segment = bool(descriptor & 0x20)
+    checksum = bool(descriptor & 0x04)
+    dictionary_flag = descriptor & 0x03
+
+    if not single_segment:
+        if cursor >= len(data):
+            raise ValueError("truncated Zstandard window descriptor")
+        cursor += 1
+
+    dictionary_size = (0, 1, 2, 4)[dictionary_flag]
+    content_size = (1 if single_segment else 0, 2, 4, 8)[content_size_flag]
+    header_tail = dictionary_size + content_size
+    if cursor + header_tail > len(data):
+        raise ValueError("truncated Zstandard frame header")
+    cursor += header_tail
+
+    while True:
+        if cursor + 3 > len(data):
+            raise ValueError("truncated Zstandard block header")
+        header = int.from_bytes(data[cursor:cursor + 3], "little")
+        cursor += 3
+        last_block = bool(header & 1)
+        block_type = (header >> 1) & 0x03
+        block_size = header >> 3
+        if block_type == 3:
+            raise ValueError("reserved Zstandard block type")
+        stored_size = 1 if block_type == 1 else block_size
+        if cursor + stored_size > len(data):
+            raise ValueError("truncated Zstandard block content")
+        cursor += stored_size
+        if last_block:
+            break
+
+    if checksum:
+        if cursor + 4 > len(data):
+            raise ValueError("truncated Zstandard content checksum")
+        cursor += 4
+    return cursor
+
+
+def _trim_zstd_ascii85_padding(data: bytes) -> bytes:
+    """Strip only zero padding introduced after one complete Zstd frame."""
+    frame_length = _zstd_frame_length(data)
+    trailing = data[frame_length:]
+    if len(trailing) > 3 or trailing != b"\0" * len(trailing):
+        raise ValueError(
+            "Luraph Zstandard stream has unexpected trailing data after frame"
+        )
+    return data[:frame_length]
+
+
 def _looks_like_vm_source(data: bytes) -> bool:
     if not data:
         return False
@@ -255,6 +324,7 @@ def _unpack_zstd_streams(source: str, payloads: Sequence[str]) -> Optional[Tuple
     # A false positive must not feed arbitrary data to the Zstandard backend.
     if not all(stream.startswith(_ZSTD_MAGIC) for stream in coded):
         return None
+    coded = [_trim_zstd_ascii85_padding(stream) for stream in coded]
 
     decoded = [decompress_zstd(stream) for stream in coded]
     if len(decoded) == 1:
