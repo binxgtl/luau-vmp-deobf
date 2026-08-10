@@ -13,7 +13,7 @@ the same input. It does not assume stable opcode numbers or helper slots.
 Requirements:
 
 - Python 3.9+
-- [Lune](https://lune-org.github.io/docs/getting-started/1/installing-lune/) on
+- [Lune](https://lune-org.github.io/docs/getting-started/1-installation/) on
   `PATH`
 - Internet access for the default [lua.expert](https://lua.expert/) readability
   post-pass. Use `--no-lua-expert` for a fully local run.
