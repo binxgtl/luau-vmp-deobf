@@ -9,7 +9,8 @@ import sys
 from . import prelude, container, devirt, disasm, decompile, luraph
 from . import (luraph_devirt, luraph_pseudo, luraph_flow, luraph_full,
                luraph_dispatch, luraph_corpus, luraph_auto,
-               luraph_lua_expert, lua_expert)
+               luraph_lua_expert, luraph_constant_facts, luraph_family,
+               lua_expert)
 from .analyse import analyse
 from .spec import Spec
 
@@ -248,15 +249,33 @@ def cmd_luraph_full(args):
     """Run the raw-loader pipeline, or the legacy IR + semantics mode."""
     if args.semantics:
         program = luraph_full.load_full_ir(args.input)
+        facts_report = None
+        if getattr(args, 'constant_facts', None):
+            facts_report = luraph_constant_facts.replay_facts(
+                program, args.input, args.constant_facts)
         semantics = luraph_dispatch.load_semantics(args.semantics)
         used = sorted({ins.opcode for p in program.protos.values() for ins in p.instructions})
         luraph_dispatch.validate_semantics(semantics, used)
         out_dir = args.output or (os.path.splitext(args.input)[0] + '.full-devirt')
         manifest = luraph_full.write_program(
             program, semantics, out_dir, split_protos=args.split_protos)
+        if facts_report is not None:
+            from pathlib import Path
+            (Path(out_dir) / 'constant_facts.json').write_text(
+                json.dumps(facts_report, indent=2, sort_keys=True) + '\n',
+                encoding='utf-8')
         print('full: {prototypes} prototypes, {instructions} instructions, '
               '{opcode_slots} opcode slots -> {out_dir}'.format(out_dir=out_dir, **manifest))
         return
+
+    if getattr(args, 'constant_facts', None):
+        raise SystemExit('--constant-facts requires typed IR and semantics JSON')
+
+    if os.path.isfile(args.input) and luraph_family.looks_like_v15(read_source(args.input)):
+        raise SystemExit(
+            'Luraph v15 wrapper detected. The v14.x loader/capture pipeline '
+            'cannot process this family; no output was written. A sample-local '
+            'v15 capture and dispatcher backend must be validated first.')
 
     out_dir = args.output or (os.path.splitext(args.input)[0] + '.luraph-full')
     use_lua_expert = not getattr(args, 'no_lua_expert', False)
@@ -398,6 +417,8 @@ def main(argv=None):
                     help='keep partial decoded artifacts when a stage fails')
     lf.add_argument('--split-protos', action='store_true',
                     help='also emit one file per prototype (bundle output is always written)')
+    lf.add_argument('--constant-facts',
+                    help='legacy IR mode: replay SHA-256-bound observed operand facts')
     lf.set_defaults(func=cmd_luraph_full)
 
     lc = sub.add_parser('luraph-corpus',
