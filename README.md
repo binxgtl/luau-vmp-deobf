@@ -8,6 +8,13 @@ including the public Luraph v14.7 families covered by the regression corpus.
 The Luraph pipeline derives opcode semantics from the interpreter embedded in
 the same input. It does not assume stable opcode numbers or helper slots.
 
+An opt-in [recorded constant replay](docs/observed-constants.md) path accepts
+SHA-256-bound observations for an existing typed IR capture. This is a first
+building block for lazy-constant research inspired by the public Luraph v15
+engine; v15 capture/devirtualization is not yet supported.
+Known v15 wrappers are identified before the v14.x pipeline begins and receive
+an explicit unsupported-family error.
+
 ## Install
 
 Requirements:
