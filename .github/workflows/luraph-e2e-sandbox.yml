@@ -20,20 +20,33 @@ concurrency:
 
 jobs:
   e2e:
-    runs-on: [self-hosted, Linux, X64, lune-sandbox]
-    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
-      FIXTURE_PATH: /opt/luauvmp-fixtures/protected.lua
+      FIXTURE_PATH: public-samples/Luraph/v14.7/001163f72ed972da.lua
       LUNE_VERSION: "0.10.5"
       # Keep the dynamic staged attempt tightly bounded. A non-converging
       # finalizer now falls back to the already validated strict capture and
       # still exercises dispatcher recovery plus full-tree devirtualisation.
       LUAUVMP_INSTRUCTION_BUDGET: "5000000"
+      LUAUVMP_FINALIZE_FALLBACK: "1"
       PYTHONUNBUFFERED: "1"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Checkout pinned public Luraph fixture
+        uses: actions/checkout@v4
+        with:
+          repository: terrorlua/obfuscator-samples
+          ref: a6ecd0ea7112c6a65d4b7acba40acc9e280301e3
+          path: public-samples
+          fetch-depth: 1
+          filter: blob:none
+          sparse-checkout: |
+            Luraph/v14.7/001163f72ed972da.lua
+          sparse-checkout-cone-mode: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -81,20 +94,16 @@ jobs:
           luauvmp-artifacts --help >/dev/null
           lune --version
 
-      - name: Require private fixture on runner
+      - name: Verify public fixture
         shell: bash
         run: |
           set -euo pipefail
           if [[ ! -s "$FIXTURE_PATH" ]]; then
-            echo "::error::Missing private fixture at $FIXTURE_PATH"
-            echo "Create it on the runner without committing it to GitHub."
-            exit 78
+            echo "::error::Pinned public sample is missing"
+            exit 1
           fi
-          mkdir -p "$RUNNER_TEMP/luauvmp-fixture"
-          cp "$FIXTURE_PATH" "$RUNNER_TEMP/luauvmp-fixture/protected.lua"
-          chmod 600 "$RUNNER_TEMP/luauvmp-fixture/protected.lua"
-          sha256sum "$RUNNER_TEMP/luauvmp-fixture/protected.lua"
-          wc -c "$RUNNER_TEMP/luauvmp-fixture/protected.lua"
+          sha256sum "$FIXTURE_PATH"
+          wc -c "$FIXTURE_PATH"
 
       - name: Run full Luraph pipeline
         id: pipeline
@@ -102,9 +111,9 @@ jobs:
         run: |
           set -o pipefail
           rm -rf recovered recovered.partial-* e2e.log
-          timeout --signal=INT --kill-after=30s 900s \
-            luauvmp luraph-full "$RUNNER_TEMP/luauvmp-fixture/protected.lua" \
-              -o recovered --force --timeout 600 --keep-failed \
+          timeout --signal=INT --kill-after=30s 600s \
+            luauvmp luraph-full "$FIXTURE_PATH" \
+              -o recovered --force --timeout 180 --no-lua-expert \
             2>&1 | tee e2e.log
 
       - name: Validate expected final output
@@ -116,57 +125,26 @@ jobs:
           test -f recovered/program.decompiled.luau
           test -f recovered/artifacts/opcode_semantics.json
           python - <<'PY'
-          import hashlib
           import json
           from pathlib import Path
 
           root = Path("recovered")
           pipeline = json.loads((root / "pipeline.json").read_text(encoding="utf-8"))
-          print(json.dumps(pipeline, indent=2, sort_keys=True))
+          print("capture kind:", pipeline.get("capture_kind"))
+          print("prototypes:", pipeline.get("prototypes"))
+          print("instructions:", pipeline.get("instructions"))
 
-          kind = pipeline["capture_kind"]
-          if kind == "finalised-staged":
-              main = root / "embedded_main.luau"
-              source_files = sorted((root / "embedded_sources").glob("*.luau"))
-              if not main.is_file():
-                  raise SystemExit("finalised staged capture did not emit embedded_main.luau")
-              print(f"embedded_main bytes={main.stat().st_size} sha256={hashlib.sha256(main.read_bytes()).hexdigest()}")
-              for path in source_files:
-                  print(f"{path.name} bytes={path.stat().st_size} sha256={hashlib.sha256(path.read_bytes()).hexdigest()}")
-              expected_sizes = sorted([1018, 11999, 58546])
-              actual_sizes = sorted({main.stat().st_size, *(p.stat().st_size for p in source_files)})
-              missing = [size for size in expected_sizes if size not in actual_sizes]
-              if missing:
-                  raise SystemExit(f"missing expected embedded source sizes: {missing}; got {actual_sizes}")
-          elif kind == "strict-fallback":
-              if pipeline.get("bootstrap_completed"):
-                  raise SystemExit("strict fallback incorrectly marked bootstrap complete")
-              if not pipeline.get("finalization_error"):
-                  raise SystemExit("strict fallback omitted finalization_error")
-              if pipeline.get("prototypes") != 170:
-                  raise SystemExit(f"unexpected strict prototype count: {pipeline.get('prototypes')}")
-              if pipeline.get("instructions", 0) < 10000:
-                  raise SystemExit(f"strict capture is unexpectedly small: {pipeline.get('instructions')}")
-              if pipeline.get("opcode_slots", 0) < 200:
-                  raise SystemExit(f"dispatcher recovery is incomplete: {pipeline.get('opcode_slots')}")
-          else:
-              raise SystemExit(f"unexpected capture kind: {kind}")
+          decompiler = pipeline.get("decompiler", {})
+          semantics = json.loads((root / "artifacts/opcode_semantics.json").read_text())
+          assert isinstance(semantics, dict) and semantics, "dispatcher recovery is empty"
+          assert pipeline.get("opcode_slots", 0) > 0, "no opcode slots recovered"
+          assert pipeline.get("payload_executed") is False, "payload was executed"
+          assert pipeline.get("final_payload_executed") is False, "final payload was executed"
+          assert decompiler.get("compile_checked") is True, "compile check failed"
+          assert decompiler.get("fallback_instructions") == 0, "semantic fallback present"
+          assert decompiler.get("unresolved_dispatcher_conditionals") == 0, "unresolved branch"
+          print("E2E quality gate passed")
           PY
-
-      - name: Preserve private diagnostics on sandbox
-        if: always()
-        shell: bash
-        run: |
-          set +e
-          DEST="$HOME/luauvmp-e2e-runs/${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          mkdir -p "$DEST"
-          cp -a e2e.log "$DEST/" 2>/dev/null || true
-          cp -a recovered "$DEST/" 2>/dev/null || true
-          for dir in recovered.partial-*; do
-            [[ -d "$dir" ]] && cp -a "$dir" "$DEST/"
-          done
-          printf 'Diagnostics retained locally at %s\n' "$DEST"
-          printf 'No protected/decompiled fixture artifacts were uploaded to GitHub.\n'
 
       - name: Print compact failure trace
         if: failure()
